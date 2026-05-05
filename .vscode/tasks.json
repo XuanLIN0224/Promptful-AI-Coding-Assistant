@@ -1,0 +1,15 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "npm: build all",
+      "type": "npm",
+      "script": "vscode:prepublish",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "clear": true
+      }
+    }
+  ]
+}
