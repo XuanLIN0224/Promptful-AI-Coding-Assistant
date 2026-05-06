@@ -94,9 +94,20 @@ def authorize_scope(actor: Principal, scopes: list[str]) -> bool:
   },
 ];
 
+export function canonicalProgramTabId(inputId: string): string {
+  const raw = inputId.replace(/\\/g, "/").toLowerCase();
+  if (raw.endsWith("/security.py") || raw.endsWith("security.py")) return "sec-py";
+  if (raw.endsWith("/application.yml") || raw.endsWith("application.yml")) return "yaml";
+  if (raw.endsWith("/calendarservice.java") || raw.endsWith("calendarservice.java")) return "svc-java";
+  if (raw.endsWith("/calendar.java") || raw.endsWith("calendar.java")) return "cal-java";
+  if (raw.endsWith("/apiclient.kt") || raw.endsWith("apiclient.kt")) return "api-kt";
+  return inputId;
+}
+
 /** Which CONTEXT cluster sidebar + prompt chip track for each mock program file (sync with explorer Plan). */
 export function clusterForProgramEditorTab(programTabId: string): ClusterId {
-  if (programTabId === "sec-py") return "security";
-  if (programTabId === "yaml") return "infra";
+  const tabId = canonicalProgramTabId(programTabId);
+  if (tabId === "sec-py") return "security";
+  if (tabId === "yaml") return "infra";
   return "core";
 }

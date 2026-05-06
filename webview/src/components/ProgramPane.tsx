@@ -159,7 +159,15 @@ export function ProgramPane({
     [openTabIds, onReorderTabs]
   );
 
-  if (!active) return null;
+  if (!active) {
+    return (
+      <div className="pf-program-wrap">
+        <div className="pf-program-meta">
+          <span className="pf-program-meta__path">Open a file in VS Code to view it here.</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="pf-program-wrap">

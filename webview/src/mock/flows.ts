@@ -356,8 +356,9 @@ const CLUSTER_ID_MAP: Record<PlanTreeKind, ClusterId> = {
 
 /** Map explorer program-tab id → which mock tree to show in Plan → Tree. */
 export function planTreeKindFromProgramTabId(tabId: string): PlanTreeKind {
-  if (tabId === "sec-py") return "security";
-  if (tabId === "yaml") return "infra";
+  const raw = tabId.replace(/\\/g, "/").toLowerCase();
+  if (raw === "sec-py" || raw.endsWith("/security.py") || raw.endsWith("security.py")) return "security";
+  if (raw === "yaml" || raw.endsWith("/application.yml") || raw.endsWith("application.yml")) return "infra";
   return "core";
 }
 

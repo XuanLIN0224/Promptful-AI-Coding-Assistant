@@ -92,6 +92,8 @@ export function FeatureSidebar({
   onReorderLocal,
   activeContext,
   onSelectContext,
+  onOpenSource,
+  onRemoveSource,
   collapsed,
   onToggleCollapsed,
 }: {
@@ -103,6 +105,8 @@ export function FeatureSidebar({
   onReorderLocal: (cluster: ClusterId, items: FeatureItem[]) => void;
   activeContext: { kind: "global" | "local"; id: string } | null;
   onSelectContext: (ctx: { kind: "global" | "local"; id: string }) => void;
+  onOpenSource: (attachmentId: string) => void;
+  onRemoveSource: (attachmentId: string) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }) {
@@ -234,10 +238,27 @@ export function FeatureSidebar({
               ) : (
                 sources.map((s) => (
                   <div key={s.id} className="pf-source-item" title={s.label}>
-                    <span className="pf-source-item__kind">
-                      {s.kind.toUpperCase()}
-                    </span>
-                    <span className="pf-source-item__label">{s.label}</span>
+                    <button
+                      type="button"
+                      className="pf-source-item__hit"
+                      onClick={() => onOpenSource(s.id)}
+                      aria-label={`Open source ${s.label}`}
+                    >
+                      <span className="pf-source-item__kind">{s.kind.toUpperCase()}</span>
+                      <span className="pf-source-item__label">{s.label}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="pf-source-item__remove"
+                      aria-label={`Remove ${s.label}`}
+                      title="Remove from sources"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemoveSource(s.id);
+                      }}
+                    >
+                      ×
+                    </button>
                   </div>
                 ))
               )}

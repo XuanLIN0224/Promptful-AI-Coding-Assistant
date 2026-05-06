@@ -9,7 +9,7 @@ export function activate(context: vscode.ExtensionContext) {
     const panel = vscode.window.createWebviewPanel(
       "promptfulWorkspace",
       "Promptful",
-      column ?? vscode.ViewColumn.One,
+      column ? vscode.ViewColumn.Beside : vscode.ViewColumn.One,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -54,28 +54,30 @@ export function activate(context: vscode.ExtensionContext) {
         activePath,
       });
     };
-    let suppressSideOpen = false;
+    const codeColumnForPanel = (): vscode.ViewColumn => {
+      if (panel.viewColumn === vscode.ViewColumn.Three) return vscode.ViewColumn.Two;
+      if (panel.viewColumn === vscode.ViewColumn.Two) return vscode.ViewColumn.One;
+      return vscode.ViewColumn.One;
+    };
 
-    const openDocInSide = async (doc: vscode.TextDocument, preserveFocus: boolean) => {
+    const openDocInCodeColumn = async (doc: vscode.TextDocument, preserveFocus: boolean) => {
       await vscode.window.showTextDocument(doc, {
-        viewColumn: vscode.ViewColumn.Beside,
+        viewColumn: codeColumnForPanel(),
         preview: false,
         preserveFocus,
       });
     };
 
-    const ensureActiveEditorOpensInSide = async (editor: vscode.TextEditor | undefined) => {
-      if (!editor) return;
-      if (suppressSideOpen) return;
-      if (editor.document.uri.scheme !== "file") return;
-      if (editor.viewColumn === vscode.ViewColumn.Beside) return;
-      suppressSideOpen = true;
-      try {
-        await openDocInSide(editor.document, true);
-      } finally {
-        setTimeout(() => {
-          suppressSideOpen = false;
-        }, 0);
+    const closeDuplicateInPromptfulColumn = async (uri: vscode.Uri) => {
+      if (!panel.viewColumn) return;
+      const group = vscode.window.tabGroups.all.find((g) => g.viewColumn === panel.viewColumn);
+      if (!group) return;
+      const dupes = group.tabs.filter((tab) => {
+        const input = tab.input;
+        return input instanceof vscode.TabInputText && input.uri.toString() === uri.toString();
+      });
+      if (dupes.length > 0) {
+        await vscode.window.tabGroups.close(dupes, true);
       }
     };
 
@@ -89,17 +91,74 @@ export function activate(context: vscode.ExtensionContext) {
         try {
           const uri = vscode.Uri.file(msg.path);
           const doc = await vscode.workspace.openTextDocument(uri);
-          await openDocInSide(doc, false);
+          await openDocInCodeColumn(doc, false);
+          await closeDuplicateInPromptfulColumn(uri);
           await pushFilesToWebview();
         } catch {
           // ignore
         }
+        return;
+      }
+      if (msg.type === "promptful/openExternal" && typeof msg.url === "string") {
+        try {
+          await vscode.env.openExternal(vscode.Uri.parse(msg.url));
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      if (msg.type === "promptful/openWorkspaceFileByName" && typeof msg.fileName === "string") {
+        const raw = msg.fileName.trim();
+        const base = raw.replace(/^.*[/\\]/, "").trim() || raw;
+        if (!base) return;
+        try {
+          const results = await vscode.workspace.findFiles(`**/${base}`, "{**/node_modules/**,**/.git/**}", 8);
+          if (results.length === 0) {
+            void vscode.window.showInformationMessage(`Promptful: Could not find "${base}" in the workspace.`);
+            return;
+          }
+          let target = results[0];
+          if (results.length > 1) {
+            const pickedPath = await vscode.window.showQuickPick(
+              results.map((u) => vscode.workspace.asRelativePath(u)),
+              { title: `Multiple matches for "${base}"`, placeHolder: "Choose a file" }
+            );
+            if (!pickedPath) return;
+            const match = results.find((u) => vscode.workspace.asRelativePath(u) === pickedPath);
+            if (match) target = match;
+          }
+          try {
+            const doc = await vscode.workspace.openTextDocument(target);
+            await openDocInCodeColumn(doc, false);
+            await closeDuplicateInPromptfulColumn(target);
+          } catch {
+            await vscode.commands.executeCommand("vscode.open", target);
+          }
+          void pushFilesToWebview();
+        } catch {
+          void vscode.window.showWarningMessage(`Promptful: Unable to open "${base}".`);
+        }
+        return;
       }
     });
 
+    let isRelocatingEditor = false;
     const subs: vscode.Disposable[] = [
       vscode.window.onDidChangeActiveTextEditor((editor) => {
-        void ensureActiveEditorOpensInSide(editor);
+        if (
+          !isRelocatingEditor &&
+          editor &&
+          editor.document.uri.scheme === "file" &&
+          panel.viewColumn &&
+          editor.viewColumn === panel.viewColumn
+        ) {
+          isRelocatingEditor = true;
+          void openDocInCodeColumn(editor.document, false)
+            .then(() => closeDuplicateInPromptfulColumn(editor.document.uri))
+            .finally(() => {
+              isRelocatingEditor = false;
+            });
+        }
         void pushFilesToWebview();
       }),
       vscode.workspace.onDidOpenTextDocument(() => {

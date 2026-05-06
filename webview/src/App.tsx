@@ -12,10 +12,9 @@ import { PromptDock } from "./components/PromptDock";
 import { assistantLineForProgramTab } from "./assistantLine";
 import { mimicAi } from "./mimicAi";
 import type { PlanTreeKind } from "./mock/flows";
-import { clusterForProgramEditorTab, PROGRAM_EDITOR_TABS } from "./programTabs";
+import { canonicalProgramTabId, clusterForProgramEditorTab, PROGRAM_EDITOR_TABS } from "./programTabs";
 import "./app.css";
 
-const DEFAULT_PROGRAM_OPEN_IDS = PROGRAM_EDITOR_TABS.map((t) => t.id);
 const INITIAL_PROGRAM_TAB = PROGRAM_EDITOR_TABS[0]?.id ?? "cal-java";
 const ATTACHMENT_ACTIONS = ["link", "upload"] as const;
 const RIGHT_SIDEBAR_MIN = 240;
@@ -29,6 +28,12 @@ function baseName(path: string): string {
   const norm = path.replace(/\\/g, "/");
   const last = norm.split("/").pop();
   return last && last.length > 0 ? last : path;
+}
+
+function linkHref(label: string): string {
+  const t = label.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t;
+  return `https://${t}`;
 }
 
 function pickFiles(accept: string): Promise<File[]> {
@@ -116,17 +121,15 @@ export default function App() {
   const [linkCaptureOpen, setLinkCaptureOpen] = useState(false);
   const [linkDraft, setLinkDraft] = useState("");
   const [pendingLinks, setPendingLinks] = useState<string[]>([]);
+  const [sourceViewerId, setSourceViewerId] = useState<string | null>(null);
   const [assistantLine, setAssistantLine] = useState(() => assistantLineForProgramTab(INITIAL_PROGRAM_TAB));
   const [featuresOpen, setFeaturesOpen] = useState(true);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(320);
-  const [programOpenIds, setProgramOpenIds] = useState<string[]>(() => [...DEFAULT_PROGRAM_OPEN_IDS]);
-  const [programTabId, setProgramTabId] = useState(DEFAULT_PROGRAM_OPEN_IDS[0] ?? "cal-java");
+  const [programOpenIds, setProgramOpenIds] = useState<string[]>([]);
+  const [programTabId, setProgramTabId] = useState("");
   const [workspaceProgramTabs, setWorkspaceProgramTabs] = useState<Array<{ id: string; label: string; path: string; code: string }>>([]);
 
-  const programCatalog = useMemo(
-    () => (workspaceProgramTabs.length > 0 ? workspaceProgramTabs : PROGRAM_EDITOR_TABS),
-    [workspaceProgramTabs]
-  );
+  const programCatalog = useMemo(() => workspaceProgramTabs, [workspaceProgramTabs]);
 
   const savedPlanViewport = planMode === "overview" ? planViewportOverview : planViewportNodegraph;
 
@@ -176,7 +179,7 @@ export default function App() {
     switch (tab) {
       case "program": {
         const p = programCatalog.find((t) => t.id === programTabId);
-        return p?.label ?? programCatalog[0]?.label ?? "Calendar.java";
+        return p?.label ?? programCatalog[0]?.label ?? "Open a file in VS Code";
       }
       case "coordinate":
         return "Workspace session";
@@ -196,8 +199,19 @@ export default function App() {
     setClusterFocus(clusterForProgramEditorTab(programTabId));
   }, [programCatalog]);
 
+  const handleProgramTabChange = useCallback(
+    (id: string) => {
+      setProgramTabId(id);
+      if (!WEBVIEW_VSCODE) return;
+      if (!workspaceProgramTabs.some((t) => t.id === id)) return;
+      WEBVIEW_VSCODE.postMessage({ type: "promptful/openFile", path: id });
+    },
+    [workspaceProgramTabs]
+  );
+
   useEffect(() => {
     if (tab !== "program") return;
+    if (!programTabId) return;
     syncContextToProgramTab(programTabId);
   }, [tab, programTabId, syncContextToProgramTab]);
 
@@ -214,8 +228,12 @@ export default function App() {
           path: f.path as string,
           code: f.content as string,
         }));
-      if (tabs.length === 0) return;
       setWorkspaceProgramTabs(tabs);
+      if (tabs.length === 0) {
+        setProgramOpenIds([]);
+        setProgramTabId("");
+        return;
+      }
       setProgramOpenIds((prev) => {
         const ids = tabs.map((t) => t.id);
         const kept = prev.filter((id) => ids.includes(id));
@@ -223,7 +241,10 @@ export default function App() {
       });
       if (typeof msg.activePath === "string" && tabs.some((t) => t.id === msg.activePath)) {
         setProgramTabId(msg.activePath);
-        setPlanExplorerTabId(msg.activePath);
+        setPlanExplorerTabId(canonicalProgramTabId(msg.activePath));
+        setClusterFocus(clusterForProgramEditorTab(msg.activePath));
+        setScopeLabel(baseName(msg.activePath));
+        setShowAllClusters(false);
       } else if (!tabs.some((t) => t.id === programTabId)) {
         setProgramTabId(tabs[0].id);
       }
@@ -346,8 +367,51 @@ export default function App() {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
+  const removeSourceFromPanel = useCallback(
+    (id: string) => {
+      removeAttachmentMetadata(id);
+      setSourceViewerId((prev) => (prev === id ? null : prev));
+    },
+    [removeAttachmentMetadata]
+  );
+
+  const sourceViewerAttachment = useMemo(
+    () => (sourceViewerId ? attachments.find((a) => a.id === sourceViewerId) ?? null : null),
+    [sourceViewerId, attachments]
+  );
+
+  useEffect(() => {
+    if (sourceViewerId && !attachments.some((a) => a.id === sourceViewerId)) {
+      setSourceViewerId(null);
+    }
+  }, [sourceViewerId, attachments]);
+
+  const openBrowserForViewerLink = useCallback(() => {
+    if (!sourceViewerAttachment || sourceViewerAttachment.kind !== "link") return;
+    const url = linkHref(sourceViewerAttachment.label);
+    WEBVIEW_VSCODE?.postMessage({ type: "promptful/openExternal", url });
+  }, [sourceViewerAttachment]);
+
+  const copyViewerLink = useCallback(async () => {
+    if (!sourceViewerAttachment || sourceViewerAttachment.kind !== "link") return;
+    const url = linkHref(sourceViewerAttachment.label);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      /* ignore */
+    }
+  }, [sourceViewerAttachment]);
+
+  const openViewerFileInHost = useCallback(() => {
+    if (!sourceViewerAttachment || sourceViewerAttachment.kind === "link") return;
+    WEBVIEW_VSCODE?.postMessage({
+      type: "promptful/openWorkspaceFileByName",
+      fileName: sourceViewerAttachment.label,
+    });
+  }, [sourceViewerAttachment]);
+
   const sourceItems = useMemo(
-    () => attachments.map((a) => ({ id: `src-${a.id}`, kind: a.kind, label: a.label })),
+    () => attachments.map((a) => ({ id: a.id, kind: a.kind, label: a.label })),
     [attachments]
   );
 
@@ -422,6 +486,55 @@ export default function App() {
                 Confirm
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {sourceViewerAttachment && (
+        <div className="pf-link-modal-backdrop" role="presentation" onMouseDown={() => setSourceViewerId(null)}>
+          <div
+            className="pf-link-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pf-source-viewer-title"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div id="pf-source-viewer-title" className="pf-link-modal__title">
+              Source · {sourceViewerAttachment.kind.charAt(0).toUpperCase()}
+              {sourceViewerAttachment.kind.slice(1)}
+            </div>
+            {sourceViewerAttachment.kind === "link" ? (
+              <>
+                <div className="pf-source-viewer__url" title={linkHref(sourceViewerAttachment.label)}>
+                  {linkHref(sourceViewerAttachment.label)}
+                </div>
+                <div className="pf-source-viewer__actions">
+                  <button type="button" className="pf-link-modal__confirm" onClick={openBrowserForViewerLink}>
+                    Open in browser
+                  </button>
+                  <button type="button" className="pf-link-modal__add" onClick={() => void copyViewerLink()}>
+                    Copy URL
+                  </button>
+                  <button type="button" className="pf-link-modal__cancel" onClick={() => setSourceViewerId(null)}>
+                    Close
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="pf-source-viewer__url">{sourceViewerAttachment.label}</div>
+                <p className="pf-source-viewer__hint">
+                  Uploaded files are kept as references here. Try opening by file name if the same file exists in your VS Code workspace.
+                </p>
+                <div className="pf-source-viewer__actions">
+                  <button type="button" className="pf-link-modal__confirm" onClick={openViewerFileInHost}>
+                    Open in VS Code (by name)
+                  </button>
+                  <button type="button" className="pf-link-modal__cancel" onClick={() => setSourceViewerId(null)}>
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -552,7 +665,7 @@ export default function App() {
               catalog={programCatalog}
               openTabIds={programOpenIds}
               activeId={programTabId}
-              onChangeTab={setProgramTabId}
+              onChangeTab={handleProgramTabChange}
               onReorderTabs={reorderProgramTabs}
               onCloseTab={closeProgramTab}
             />
@@ -595,6 +708,8 @@ export default function App() {
           onReorderLocal={(cluster, items) => setLocalByCluster((p) => ({ ...p, [cluster]: items }))}
           activeContext={activeContext}
           onSelectContext={setActiveContext}
+          onOpenSource={setSourceViewerId}
+          onRemoveSource={removeSourceFromPanel}
           collapsed={!featuresOpen}
           onToggleCollapsed={() => setFeaturesOpen((o) => !o)}
         />
