@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type SetStateAction } from "react";
 import type { OnSelectionChangeParams, Viewport } from "@xyflow/react";
 import type { ClusterId, DecisionNodePayload, FeatureItem, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode, WorkspaceTab } from "./types";
 import { CLUSTERS } from "./types";
@@ -200,6 +200,40 @@ export default function App() {
       return changed ? next : prev;
     });
   }, [planTreeSelections]);
+
+  const handlePlanTreeSelectionsChange = useCallback(
+    (update: SetStateAction<Partial<Record<PlanTreeKind, string | null>>>) => {
+      setPlanTreeSelections((prev) => {
+        const next = typeof update === "function" ? update(prev) : update;
+
+        setCompletedClusterIds((completedPrev) => {
+          const completedNext = new Set(completedPrev);
+          let changed = false;
+
+          if (next.core === "co-settle" && !completedNext.has("core")) {
+            completedNext.add("core");
+            changed = true;
+          } else if (next.core !== "co-settle" && completedNext.has("core")) {
+            completedNext.delete("core");
+            changed = true;
+          }
+
+          if (next.groups === "gr-balances" && !completedNext.has("groups")) {
+            completedNext.add("groups");
+            changed = true;
+          } else if (next.groups !== "gr-balances" && completedNext.has("groups")) {
+            completedNext.delete("groups");
+            changed = true;
+          }
+
+          return changed ? completedNext : completedPrev;
+        });
+
+        return next;
+      });
+    },
+    []
+  );
 
   const savedPlanViewport = planMode === "overview" ? planViewportOverview : planViewportNodegraph;
 
@@ -908,7 +942,7 @@ export default function App() {
                   planExplorerTabId={planExplorerTabId}
                   onSelection={onFlowSelection}
                   planTreeSelections={planTreeSelections}
-                  onPlanTreeSelectionsChange={setPlanTreeSelections}
+                  onPlanTreeSelectionsChange={handlePlanTreeSelectionsChange}
                   showAllClusters={showAllClusters}
                   savedViewport={savedPlanViewport}
                   onViewportSave={handlePlanViewportSave}

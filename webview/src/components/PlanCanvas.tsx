@@ -507,6 +507,8 @@ function Inner({
       });
       onPlanTreeSelectionsChange((prev) => ({ ...prev, [kind]: node.id }));
       if (isTerminal) onClusterComplete(kind);
+      if (node.id === "co-settle") onClusterComplete("core");
+      if (node.id === "gr-balances") onClusterComplete("groups");
       requestAnimationFrame(() => requestAnimationFrame(() => fitCurrentView(320)));
     },
     [
