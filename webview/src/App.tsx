@@ -500,6 +500,10 @@ export default function App() {
 
   const applyPlan = useCallback(() => {
     if (completedClusterIds.size < CLUSTERS.length || planApplied) return;
+    WEBVIEW_VSCODE?.postMessage({
+      type: "promptful/applyPlan",
+      files: PROGRAM_EDITOR_TABS.map(({ path, code }) => ({ path, content: code })),
+    });
     setPlanApplied(true);
     setProgramOpenIds(DEFAULT_PROGRAM_TAB_IDS);
     setProgramTabId(INITIAL_PROGRAM_TAB);

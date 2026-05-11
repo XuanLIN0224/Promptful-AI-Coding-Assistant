@@ -20,6 +20,33 @@ export function activate(context: vscode.ExtensionContext) {
     panel.webview.html = getWebviewContent(context.extensionUri, panel.webview);
 
     type OpenFilePayload = { path: string; content: string; languageId: string };
+    type GeneratedFilePayload = { path: string; content: string };
+
+    const safeWorkspaceTarget = (
+      root: vscode.Uri,
+      relativePath: string
+    ): { fileUri: vscode.Uri; directoryUri: vscode.Uri } | null => {
+      const normalisedPath = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
+      const parts = normalisedPath.split("/").filter(Boolean);
+      if (parts.length === 0 || parts.some((part) => part === "." || part === "..")) {
+        return null;
+      }
+
+      return {
+        fileUri: vscode.Uri.joinPath(root, ...parts),
+        directoryUri: parts.length > 1 ? vscode.Uri.joinPath(root, ...parts.slice(0, -1)) : root,
+      };
+    };
+
+    const coerceGeneratedFiles = (input: unknown): GeneratedFilePayload[] => {
+      if (!Array.isArray(input)) return [];
+      return input.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const candidate = item as Record<string, unknown>;
+        if (typeof candidate.path !== "string" || typeof candidate.content !== "string") return [];
+        return [{ path: candidate.path, content: candidate.content }];
+      });
+    };
 
     const collectOpenFiles = async (): Promise<OpenFilePayload[]> => {
       const files = vscode.workspace.textDocuments
@@ -85,6 +112,44 @@ export function activate(context: vscode.ExtensionContext) {
       if (!msg || typeof msg !== "object") return;
       if (msg.type === "promptful/requestFiles") {
         await pushFilesToWebview();
+        return;
+      }
+      if (msg.type === "promptful/applyPlan") {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+        if (!root) {
+          void vscode.window.showWarningMessage("Promptful: Open a workspace before applying the plan.");
+          return;
+        }
+
+        const files = coerceGeneratedFiles(msg.files);
+        const writtenUris: vscode.Uri[] = [];
+        for (const file of files) {
+          const target = safeWorkspaceTarget(root, file.path);
+          if (!target) continue;
+          try {
+            await vscode.workspace.fs.createDirectory(target.directoryUri);
+            await vscode.workspace.fs.writeFile(target.fileUri, Buffer.from(file.content, "utf8"));
+            writtenUris.push(target.fileUri);
+          } catch {
+            // Keep the mock workflow moving if one generated file cannot be written.
+          }
+        }
+
+        if (writtenUris.length === 0) {
+          void vscode.window.showWarningMessage("Promptful: No starter files could be generated.");
+          return;
+        }
+
+        try {
+          const doc = await vscode.workspace.openTextDocument(writtenUris[0]);
+          await openDocInCodeColumn(doc, false);
+          await closeDuplicateInPromptfulColumn(writtenUris[0]);
+        } catch {
+          // The files were still generated even if VS Code cannot open the first one immediately.
+        }
+
+        await pushFilesToWebview();
+        void vscode.window.showInformationMessage(`Promptful: Generated ${writtenUris.length} starter files in src.`);
         return;
       }
       if (msg.type === "promptful/openFile" && typeof msg.path === "string") {
