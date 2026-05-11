@@ -1,6 +1,6 @@
 import type { ClusterId } from "./types";
 
-/** Open-in-Program editor tabs + sample sources (mock). */
+/** Open-in-Program editor tabs + sample sources (mock only; no generated code is executed). */
 export interface ProgramEditorTab {
   id: string;
   label: string;
@@ -10,104 +10,104 @@ export interface ProgramEditorTab {
 
 export const PROGRAM_EDITOR_TABS: ProgramEditorTab[] = [
   {
-    id: "cal-java",
-    label: "Calendar.java",
-    path: "src/main/java/com/acme/calendar/Calendar.java",
-    code: `public final class Calendar {
-  private final Id id;
+    id: "split-ts",
+    label: "SplitCalculator.ts",
+    path: "src/domain/splitting/SplitCalculator.ts",
+    code: `export type SplitMethod = "equal" | "percentage" | "custom";
 
-  public Calendar(Id id, ZoneRules rules) {
-    this.id = id;
-    // decision: immutable id vs regenerated key each deploy
-    this.rules = rules;
-  }
+export function calculateShares(totalCents: number, participantIds: string[], method: SplitMethod) {
+  // decision: choose equal, percentage, or custom cost-splitting rules
+  const baseShare = Math.floor(totalCents / Math.max(participantIds.length, 1));
 
-  public ZonedDateTime interpret(Instant utc) {
-    return utc.atZone(rules.effectiveZone());
-  }
-}`,
-  },
-  {
-    id: "svc-java",
-    label: "CalendarService.java",
-    path: "src/main/java/com/acme/calendar/CalendarService.java",
-    code: `public final class CalendarService {
-  private final Clock clock;
-  private final ZoneResolver zones;
-
-  public EventSeries normalizeSeries(RawSeries raw) {
-    // decision: storage normalization — UTC vs wall time
-    Instant anchor = raw.startsAt().atZone(zones.user()).toInstant();
-    return new EventSeries(anchor, raw.rule());
-  }
-
-  public ConflictReport detectOverlap(List<Event> events) {
-    // decision: overlap policy — hard reject vs soft warn
-    return sweepLine(events, OverlapPolicy.strict());
-  }
-}`,
-  },
-  {
-    id: "api-kt",
-    label: "ApiClient.kt",
-    path: "src/main/kotlin/com/acme/client/ApiClient.kt",
-    code: `class ApiClient(
-  private val http: OkHttpClient,
-  private val tokenVault: Vault,
-) {
-  suspend fun syncCalendar(cursor: Cursor): Batch {
-    // decision: backoff — exponential vs decorrelated jitter
-    return withRetry(policy = Backoff.decorrelated(maxMs = 8000)) {
-      http.calendarDiff(cursor).requireOk()
-    }
-  }
-}`,
-  },
-  {
-    id: "sec-py",
-    label: "Security.py",
-    path: "python/security/Security.py",
-    code: `def refresh_token(flow: OAuthFlow) -> Credentials:
-    # decision: rotating refresh tokens vs long-lived offline
-    if flow.requires_rotation():
-        return rotate_refresh(flow.credentials)
-    return flow.credentials.extend(ttl=VAULT_BOUND)
-
-def authorize_scope(actor: Principal, scopes: list[str]) -> bool:
-    # decision: coarse calendar.read vs granular per-resource
-    return policy.least_common(scopes).issubset(actor.allowed_scopes())
+  // decision: handle rounding so the submitted expense still reconciles
+  return participantIds.map((participantId, index) => ({
+    participantId,
+    cents: index === 0 ? baseShare + totalCents % participantIds.length : baseShare,
+    method,
+  }));
+}
 `,
   },
   {
-    id: "yaml",
-    label: "application.yml",
-    path: "src/main/resources/application.yml",
-    code: `calendar:
-  provider: hybrid
-  # decision: webhook secret — env vs KMS envelope
-  webhook:
-    secretRef: KMS_CAL_WEBHOOK
-  limits:
-    # decision: burst vs sustained rate cap
-    maxFanOutPerMinute: 500
+    id: "auth-ts",
+    label: "AuthService.ts",
+    path: "src/account/AuthService.ts",
+    code: `export async function signIn(email: string, password: string) {
+  // decision: account access owns sign-in and session identity
+  const session = await mockSession(email, password);
+
+  // decision: subscription tier gates premium budgeting and group limits
+  return { session, entitlements: ["free-plan", "household-group"] };
+}
+
+async function mockSession(email: string, password: string) {
+  return { userId: "demo-user", email, passwordAccepted: password.length > 0 };
+}
+`,
+  },
+  {
+    id: "groups-ts",
+    label: "GroupService.ts",
+    path: "src/groups/GroupService.ts",
+    code: `export function createGroup(ownerId: string, name: string) {
+  // decision: groups can represent households, dining events, or trips
+  return { id: "grp-demo", ownerId, name, members: [ownerId] };
+}
+
+export function inviteMember(groupId: string, email: string) {
+  // decision: member invites connect group access to later expense splits
+  return { groupId, email, status: "pending" };
+}
+`,
+  },
+  {
+    id: "budgeting-ts",
+    label: "BudgetingService.ts",
+    path: "src/budgeting/BudgetingService.ts",
+    code: `export function createMonthlyBudget(userId: string, month: string, limitCents: number) {
+  // decision: monthly budgeting tracks planned spend by user and category
+  return { userId, month, limitCents, categories: [] };
+}
+
+export function summariseBudget(month: string, expenseTotals: number[]) {
+  // decision: budget summaries belong to budgeting, not access control
+  return { month, spentCents: expenseTotals.reduce((sum, n) => sum + n, 0) };
+}
+`,
+  },
+  {
+    id: "security-ts",
+    label: "SecurityPolicy.ts",
+    path: "src/security/SecurityPolicy.ts",
+    code: `export function canViewFinancialRecord(actorId: string, recordOwnerId: string, groupMemberIds: string[]) {
+  // decision: financial records require explicit owner or group membership access
+  return actorId === recordOwnerId || groupMemberIds.includes(actorId);
+}
+
+export function auditFinancialChange(actorId: string, action: string, recordId: string) {
+  // decision: security covers audit trails, access control, and data protection
+  return { actorId, action, recordId, recordedAt: new Date().toISOString() };
+}
 `,
   },
 ];
 
 export function canonicalProgramTabId(inputId: string): string {
   const raw = inputId.replace(/\\/g, "/").toLowerCase();
-  if (raw.endsWith("/security.py") || raw.endsWith("security.py")) return "sec-py";
-  if (raw.endsWith("/application.yml") || raw.endsWith("application.yml")) return "yaml";
-  if (raw.endsWith("/calendarservice.java") || raw.endsWith("calendarservice.java")) return "svc-java";
-  if (raw.endsWith("/calendar.java") || raw.endsWith("calendar.java")) return "cal-java";
-  if (raw.endsWith("/apiclient.kt") || raw.endsWith("apiclient.kt")) return "api-kt";
+  if (raw === "auth-ts" || raw.endsWith("/authservice.ts") || raw.endsWith("authservice.ts")) return "auth-ts";
+  if (raw === "groups-ts" || raw.endsWith("/groupservice.ts") || raw.endsWith("groupservice.ts")) return "groups-ts";
+  if (raw === "budgeting-ts" || raw.endsWith("/budgetingservice.ts") || raw.endsWith("budgetingservice.ts")) return "budgeting-ts";
+  if (raw === "security-ts" || raw.endsWith("/securitypolicy.ts") || raw.endsWith("securitypolicy.ts")) return "security-ts";
+  if (raw === "split-ts" || raw.endsWith("/splitcalculator.ts") || raw.endsWith("splitcalculator.ts")) return "split-ts";
   return inputId;
 }
 
-/** Which CONTEXT cluster sidebar + prompt chip track for each mock program file (sync with explorer Plan). */
+/** Which context cluster sidebar + prompt chip track for each mock program file (sync with explorer Plan). */
 export function clusterForProgramEditorTab(programTabId: string): ClusterId {
   const tabId = canonicalProgramTabId(programTabId);
-  if (tabId === "sec-py") return "security";
-  if (tabId === "yaml") return "infra";
+  if (tabId === "auth-ts") return "account";
+  if (tabId === "groups-ts") return "groups";
+  if (tabId === "budgeting-ts") return "budgeting";
+  if (tabId === "security-ts") return "security";
   return "core";
 }
