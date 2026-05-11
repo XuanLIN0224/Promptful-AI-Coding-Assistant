@@ -529,8 +529,63 @@
   min-width: 0;
 }
 
+.pf-toolbar__apply {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.pf-toolbar__apply--ready {
+  border-color: rgba(52, 199, 89, 0.46);
+  background: rgba(52, 199, 89, 0.12);
+  color: #18793a;
+}
+
+.pf-toolbar__apply:disabled {
+  cursor: default;
+  opacity: 0.58;
+  box-shadow: none;
+}
+
+.pf-toolbar__apply:not(:disabled):hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.pf-plan-canvas-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pf-canvas-legend {
+  position: absolute;
+  right: 16px;
+  top: 14px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
 @media (max-width: 1120px) {
-  .pf-legend {
+  .pf-legend,
+  .pf-canvas-legend {
     flex-direction: column;
     align-items: flex-start;
     gap: 6px;

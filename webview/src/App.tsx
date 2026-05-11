@@ -15,15 +15,6 @@ import { canonicalProgramTabId, clusterForProgramEditorTab, PROGRAM_EDITOR_TABS 
 import "./app.css";
 
 const INITIAL_PROGRAM_TAB = PROGRAM_EDITOR_TABS[0]?.id ?? "split-ts";
-const DEFAULT_PROGRAM_TAB_IDS = PROGRAM_EDITOR_TABS.map((tab) => tab.id);
-const PENDING_PROGRAM_TAB = {
-  id: "terminus-root",
-  label: "Terminus",
-  path: "Terminus/",
-  code: `Terminus/
-  Files will appear after the plan is applied.
-`,
-};
 const ATTACHMENT_ACTIONS = ["link", "upload"] as const;
 const RIGHT_SIDEBAR_MIN = 240;
 const RIGHT_SIDEBAR_MAX = 520;
@@ -167,17 +158,11 @@ export default function App() {
   const [assistantLine, setAssistantLine] = useState(() => assistantLineForProgramTab(INITIAL_PROGRAM_TAB));
   const [featuresOpen, setFeaturesOpen] = useState(true);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(320);
-  const [programOpenIds, setProgramOpenIds] = useState<string[]>([PENDING_PROGRAM_TAB.id]);
-  const [programTabId, setProgramTabId] = useState(PENDING_PROGRAM_TAB.id);
+  const [programOpenIds, setProgramOpenIds] = useState<string[]>([]);
+  const [programTabId, setProgramTabId] = useState("");
   const [workspaceProgramTabs, setWorkspaceProgramTabs] = useState<Array<{ id: string; label: string; path: string; code: string }>>([]);
 
-  const programCatalog = useMemo(
-    () => {
-      if (!planApplied) return [PENDING_PROGRAM_TAB];
-      return workspaceProgramTabs.length > 0 ? workspaceProgramTabs : PROGRAM_EDITOR_TABS;
-    },
-    [planApplied, workspaceProgramTabs]
-  );
+  const programCatalog = useMemo(() => workspaceProgramTabs, [workspaceProgramTabs]);
 
   const completedClusterCount = completedClusterIds.size;
   const clusterTotal = CLUSTERS.length;
@@ -285,7 +270,7 @@ export default function App() {
     switch (tab) {
       case "program": {
         const p = programCatalog.find((t) => t.id === programTabId);
-        return p?.label ?? programCatalog[0]?.label ?? "Open a file in VS Code";
+        return p?.label ?? programCatalog[0]?.label ?? "Files";
       }
       case "plan": {
         if (planMode === "nodegraph") return "Node graph";
@@ -333,16 +318,9 @@ export default function App() {
           code: f.content as string,
       }));
       setWorkspaceProgramTabs(tabs);
-      if (!planApplied) {
-        setProgramOpenIds([PENDING_PROGRAM_TAB.id]);
-        setProgramTabId(PENDING_PROGRAM_TAB.id);
-        return;
-      }
       if (tabs.length === 0) {
-        setProgramOpenIds(DEFAULT_PROGRAM_TAB_IDS);
-        setProgramTabId(INITIAL_PROGRAM_TAB);
-        setPlanExplorerTabId(INITIAL_PROGRAM_TAB);
-        setClusterFocus("core");
+        setProgramOpenIds([]);
+        setProgramTabId("");
         return;
       }
       setProgramOpenIds((prev) => {
@@ -363,7 +341,7 @@ export default function App() {
     window.addEventListener("message", onMessage);
     WEBVIEW_VSCODE.postMessage({ type: "promptful/requestFiles" });
     return () => window.removeEventListener("message", onMessage);
-  }, [planApplied, programTabId]);
+  }, [programTabId]);
 
   const reorderProgramTabs = useCallback((next: string[]) => {
     setProgramOpenIds(next);
@@ -505,8 +483,6 @@ export default function App() {
       files: PROGRAM_EDITOR_TABS.map(({ path, code }) => ({ path, content: code })),
     });
     setPlanApplied(true);
-    setProgramOpenIds(DEFAULT_PROGRAM_TAB_IDS);
-    setProgramTabId(INITIAL_PROGRAM_TAB);
     setPlanExplorerTabId(INITIAL_PROGRAM_TAB);
     setClusterFocus("core");
     setShowIntro(false);
@@ -867,19 +843,6 @@ export default function App() {
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            className={`pf-apply-plan ${completedClusterCount === clusterTotal && !planApplied ? "pf-apply-plan--ready" : ""}`}
-            disabled={completedClusterCount < clusterTotal || planApplied}
-            onClick={applyPlan}
-            title={planApplied ? "Plan applied" : completedClusterCount === clusterTotal ? "Generate starter files" : "Complete each cluster decision tree"}
-          >
-            {planApplied
-              ? `Plan applied ${clusterTotal}/${clusterTotal}`
-              : completedClusterCount === clusterTotal
-                ? `Apply plan ${completedClusterCount}/${clusterTotal}`
-                : `Confirm clusters ${completedClusterCount}/${clusterTotal}`}
-          </button>
         </div>
         <div className="pf-crumb">{headerCrumb}</div>
       </header>
@@ -934,31 +897,48 @@ export default function App() {
                     )}
                   </div>
                   <div className="pf-toolbar__right">
-                    <div className="pf-legend" aria-label="Cluster legend">
-                      {CLUSTERS.map((c) => (
-                        <span key={c.id} className="pf-legend__item">
-                          <span className="pf-legend__dot" style={{ background: c.color }} />
-                          {c.label}
-                        </span>
-                      ))}
-                    </div>
+                    <button
+                      type="button"
+                      className={`pf-toolbar__apply ${completedClusterCount === clusterTotal && !planApplied ? "pf-toolbar__apply--ready" : ""}`}
+                      disabled={completedClusterCount < clusterTotal || planApplied}
+                      onClick={applyPlan}
+                      title={planApplied ? "Plan applied" : completedClusterCount === clusterTotal ? "Generate starter files" : "Complete each cluster decision tree"}
+                    >
+                      {planApplied
+                        ? `Plan applied ${clusterTotal}/${clusterTotal}`
+                        : completedClusterCount === clusterTotal
+                          ? `Apply plan ${completedClusterCount}/${clusterTotal}`
+                          : `Confirm clusters ${completedClusterCount}/${clusterTotal}`}
+                    </button>
                   </div>
                 </div>
-                <PlanCanvas
-                  mode={planMode}
-                  planExplorerTabId={planExplorerTabId}
-                  onSelection={onFlowSelection}
-                  planTreeSelections={planTreeSelections}
-                  onPlanTreeSelectionsChange={handlePlanTreeSelectionsChange}
-                  showAllClusters={showAllClusters}
-                  savedViewport={savedPlanViewport}
-                  onViewportSave={handlePlanViewportSave}
-                  onGenerateFeatures={handleGenerateFeatures}
-                  generatedFeatureNodeIds={generatedFeatureNodeIds}
-                  onClusterComplete={handleClusterComplete}
-                  onTreeUndoNode={handleTreeUndoNode}
-                  onTreeNodesCollapsed={handleTreeNodesCollapsed}
-                />
+                <div className="pf-plan-canvas-wrap">
+                  <div className="pf-canvas-legend" aria-label="Cluster legend">
+                    {CLUSTERS.map((c) => (
+                      <span key={c.id} className="pf-legend__item">
+                        <span className="pf-legend__dot" style={{ background: c.color }} />
+                        {c.label}
+                      </span>
+                    ))}
+                  </div>
+                  <PlanCanvas
+                    mode={planMode}
+                    planExplorerTabId={planExplorerTabId}
+                    planClusterFocus={clusterFocus}
+                    onSelection={onFlowSelection}
+                    planTreeSelections={planTreeSelections}
+                    onPlanTreeSelectionsChange={handlePlanTreeSelectionsChange}
+                    onClusterFocusChange={setClusterFocus}
+                    showAllClusters={showAllClusters}
+                    savedViewport={savedPlanViewport}
+                    onViewportSave={handlePlanViewportSave}
+                    onGenerateFeatures={handleGenerateFeatures}
+                    generatedFeatureNodeIds={generatedFeatureNodeIds}
+                    onClusterComplete={handleClusterComplete}
+                    onTreeUndoNode={handleTreeUndoNode}
+                    onTreeNodesCollapsed={handleTreeNodesCollapsed}
+                  />
+                </div>
               </>
             )}
             {tab === "program" && (

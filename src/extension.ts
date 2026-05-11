@@ -21,6 +21,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     type OpenFilePayload = { path: string; content: string; languageId: string };
     type GeneratedFilePayload = { path: string; content: string };
+    let generatedFileUris: vscode.Uri[] = [];
 
     const safeWorkspaceTarget = (
       root: vscode.Uri,
@@ -52,7 +53,8 @@ export function activate(context: vscode.ExtensionContext) {
       const files = vscode.workspace.textDocuments
         .filter((d) => d.uri.scheme === "file")
         .map((d) => d.uri.fsPath);
-      const unique = [...new Set(files)];
+      const generated = generatedFileUris.map((uri) => uri.fsPath);
+      const unique = [...new Set([...generated, ...files])];
       const out: OpenFilePayload[] = [];
       for (const fsPath of unique) {
         try {
@@ -139,6 +141,7 @@ export function activate(context: vscode.ExtensionContext) {
           void vscode.window.showWarningMessage("Promptful: No starter files could be generated.");
           return;
         }
+        generatedFileUris = writtenUris;
 
         try {
           const doc = await vscode.workspace.openTextDocument(writtenUris[0]);
