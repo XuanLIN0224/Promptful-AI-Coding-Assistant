@@ -7,382 +7,492 @@ const src = (label: string, kind: DecisionNodePayload["sources"][0]["kind"]): De
   kind,
 });
 
+export type PlanTreeKind = "core" | "account" | "groups" | "budgeting" | "security";
+
 export const decisionTreeNodes: Node<DecisionNodePayload>[] = [
   {
-    id: "dt-root",
+    id: "co-root",
     type: "decision",
-    position: { x: 220, y: 24 },
+    position: { x: 200, y: 24 },
     data: {
-      title: "Calendar…",
-      summary: "Define how events reconcile across daylight-saving transitions.",
+      title: "Core splitting",
+      summary: "Define how submitted costs become participant balances.",
       clusterId: "core",
-      planSourceTabId: "cal-java",
-      sources: [
-        src("Prompt #12 — timezone scope", "prompt"),
-        src("docs/product/calendar.md", "file"),
-        src("Assumption: single org calendar", "assumption"),
-      ],
+      planSourceTabId: "split-ts",
+      sources: [src("Initial Terminus brief", "prompt"), src("Client comparison: Beem and Splitwise", "assumption")],
       options: [
-        {
-          id: "opt-yes",
-          label: "Yes",
-          confidence: 95,
-          summary: "Normalize to UTC at storage; render with user locale.",
-        },
-        {
-          id: "opt-no",
-          label: "No",
-          confidence: 5,
-          summary: "Store local wall time only (higher DST risk).",
-        },
+        { id: "co-equal", label: "Equal", confidence: 72, summary: "Default to equal split with later adjustment." },
+        { id: "co-custom", label: "Custom", confidence: 28, summary: "Ask for exact shares during entry." },
       ],
-      confirmed: false,
     },
   },
   {
-    id: "dt-no",
+    id: "co-equal",
     type: "branch",
-    position: { x: 40, y: 220 },
+    position: { x: 40, y: 210 },
     data: {
-      title: "NO · 5%",
-      summary: "Defer normalization; revisit after MVP.",
+      title: "EQUAL - 72%",
+      summary: "Split by participant count first, then allow manual edits.",
       clusterId: "core",
-      planSourceTabId: "cal-java",
-      sources: [src("Risk register — DST", "feature")],
+      planSourceTabId: "split-ts",
+      sources: [src("Feature: cost splitting", "feature")],
     },
   },
   {
-    id: "dt-yes",
+    id: "co-custom",
     type: "branch",
-    position: { x: 420, y: 200 },
+    position: { x: 412, y: 200 },
     data: {
-      title: "YES · 95%",
-      summary: "Adopt UTC storage + explicit IANA zone on each row.",
+      title: "CUSTOM - 28%",
+      summary: "Support exact shares, percentage, and paid-by tracking.",
       clusterId: "core",
-      planSourceTabId: "cal-java",
-      sources: [src("Prompt #13 — storage model", "prompt"), src("Calendar.java", "file")],
+      planSourceTabId: "split-ts",
+      sources: [src("Feature: submit and split costs", "feature")],
       optionsAsSeparateBranches: true,
       options: [
-        { id: "y2", label: "Yes", confidence: 68, summary: "Add `zone_id` column + migration." },
-        { id: "y2n", label: "No", confidence: 12, summary: "Embed offset minutes only." },
-        { id: "y2o", label: "Alt", confidence: 15, summary: "Hybrid: zone + cached offset." },
-        { id: "y2s", label: "Spike", confidence: 5, summary: "Time-box spike first." },
+        { id: "co-cents", label: "Exact cents", confidence: 45, summary: "Most precise but more input." },
+        { id: "co-percent", label: "Percent", confidence: 35, summary: "Flexible for subscriptions." },
+        { id: "co-shares", label: "Shares", confidence: 20, summary: "Simple for dining." },
       ],
     },
   },
   {
-    id: "dt-yes-yes",
+    id: "co-cents",
     type: "branch",
-    position: { x: 260, y: 315 },
+    position: { x: 262, y: 320 },
     data: {
-      title: "YES · 68%",
-      summary: "Add `zone_id` column + migration.",
+      title: "CENTS - 45%",
+      summary: "Store exact owed cents per participant.",
       clusterId: "core",
-      planSourceTabId: "cal-java",
-      sources: [src("Migration draft", "file")],
+      planSourceTabId: "split-ts",
+      sources: [src("SplitCalculator.ts", "file")],
     },
   },
   {
-    id: "dt-yes-no",
+    id: "co-percent",
     type: "branch",
-    position: { x: 390, y: 315 },
+    position: { x: 426, y: 320 },
     data: {
-      title: "NO · 12%",
-      summary: "Embed offset minutes only.",
+      title: "PERCENT - 35%",
+      summary: "Allow percentage allocations on recurring subscriptions.",
       clusterId: "core",
-      planSourceTabId: "cal-java",
-      sources: [src("Offset-only fallback", "assumption")],
+      planSourceTabId: "split-ts",
+      sources: [src("Subscription allocation note", "feature")],
     },
   },
   {
-    id: "dt-yes-alt",
-    type: "branch",
-    position: { x: 520, y: 315 },
-    data: {
-      title: "ALT · 15%",
-      summary: "Hybrid: zone + cached offset.",
-      clusterId: "core",
-      planSourceTabId: "cal-java",
-      sources: [src("Hybrid memo", "file")],
-    },
-  },
-  {
-    id: "dt-yes-spike",
-    type: "branch",
-    position: { x: 650, y: 315 },
-    data: {
-      title: "SPIKE · 5%",
-      summary: "Time-box spike first.",
-      clusterId: "core",
-      planSourceTabId: "cal-java",
-      sources: [src("Spike plan", "prompt")],
-    },
-  },
-  {
-    id: "dt-alg",
+    id: "co-settle",
     type: "decision",
-    position: { x: 450, y: 470 },
+    position: { x: 402, y: 490 },
     data: {
-      title: "alg",
-      summary: "Conflict resolution when overlapping events share attendees.",
+      title: "Settlement state",
+      summary: "Track whether each participant owes, paid, or is settled.",
       clusterId: "core",
-      planSourceTabId: "cal-java",
-      sources: [src("Prompt #14 — overlap policy", "prompt")],
+      planSourceTabId: "split-ts",
+      sources: [src("Feature: settlement tracking", "feature")],
       confirmed: true,
     },
   },
 ];
 
 export const decisionTreeEdges: Edge[] = [
-  { id: "e-r-n", source: "dt-root", target: "dt-no", type: "smoothstep", animated: false },
-  { id: "e-r-y", source: "dt-root", target: "dt-yes", type: "smoothstep", animated: false },
-  { id: "e-y-y", source: "dt-yes", target: "dt-yes-yes", type: "smoothstep", animated: false },
-  { id: "e-y-n", source: "dt-yes", target: "dt-yes-no", type: "smoothstep", animated: false },
-  { id: "e-y-a", source: "dt-yes", target: "dt-yes-alt", type: "smoothstep", animated: false },
-  { id: "e-y-s", source: "dt-yes", target: "dt-yes-spike", type: "smoothstep", animated: false },
-  { id: "e-yy-alg", source: "dt-yes-yes", target: "dt-alg", type: "smoothstep", animated: false },
-  { id: "e-yn-alg", source: "dt-yes-no", target: "dt-alg", type: "smoothstep", animated: false },
-  { id: "e-ya-alg", source: "dt-yes-alt", target: "dt-alg", type: "smoothstep", animated: false },
-  { id: "e-ys-alg", source: "dt-yes-spike", target: "dt-alg", type: "smoothstep", animated: false },
+  { id: "co-e1", source: "co-root", target: "co-equal", type: "smoothstep", animated: false },
+  { id: "co-e2", source: "co-root", target: "co-custom", type: "smoothstep", animated: false },
+  { id: "co-e3", source: "co-custom", target: "co-cents", type: "smoothstep", animated: false },
+  { id: "co-e4", source: "co-custom", target: "co-percent", type: "smoothstep", animated: false },
+  { id: "co-e5", source: "co-equal", target: "co-settle", type: "smoothstep", animated: false },
+  { id: "co-e6", source: "co-cents", target: "co-settle", type: "smoothstep", animated: false },
+  { id: "co-e7", source: "co-percent", target: "co-settle", type: "smoothstep", animated: false },
 ];
 
-/** Canonical root decision id per cluster mock — undo is never offered on these. */
-export const PLAN_CLUSTER_TREE_ROOT_IDS = new Set<string>(["dt-root", "st-root", "it-root"]);
-
-/** Security.py decision tree (same shape family as Core calendar tree). */
-export const securityTreeNodes: Node<DecisionNodePayload>[] = [
+export const accountTreeNodes: Node<DecisionNodePayload>[] = [
   {
-    id: "st-root",
+    id: "ua-root",
     type: "decision",
-    position: { x: 200, y: 20 },
+    position: { x: 200, y: 24 },
     data: {
-      title: "Security.py",
-      summary: "Least-privilege OAuth scopes and token handling for calendar sync.",
-      clusterId: "security",
-      planSourceTabId: "sec-py",
-      sources: [src("Prompt #4 — OAuth", "prompt")],
+      title: "Account access",
+      summary: "Own identity, sessions, profile data, and subscription entitlement checks.",
+      clusterId: "account",
+      planSourceTabId: "auth-ts",
+      sources: [src("Local context refinement", "prompt")],
       options: [
-        { id: "st-y", label: "Yes", confidence: 78, summary: "Narrow scopes; rotate refresh tokens." },
-        { id: "st-n", label: "No", confidence: 22, summary: "Broad calendar access for speed." },
+        { id: "ua-basic", label: "Basic auth", confidence: 66, summary: "Email/password with mock sessions." },
+        { id: "ua-social", label: "Social login", confidence: 34, summary: "Out of scope for this mock." },
       ],
     },
   },
   {
-    id: "st-narrow",
+    id: "ua-signin",
     type: "branch",
-    position: { x: 28, y: 200 },
+    position: { x: 42, y: 210 },
     data: {
-      title: "NARROW · 78%",
-      summary: "Per-resource grants; short-lived access tokens.",
-      clusterId: "security",
-      planSourceTabId: "sec-py",
-      sources: [src("Policy — least privilege", "feature")],
+      title: "SIGN-IN - 66%",
+      summary: "Email/password sign-in and session state belong here.",
+      clusterId: "account",
+      planSourceTabId: "auth-ts",
+      sources: [src("AuthService.ts", "file")],
     },
   },
   {
-    id: "st-broad",
+    id: "ua-subscription",
     type: "branch",
-    position: { x: 400, y: 180 },
+    position: { x: 412, y: 200 },
     data: {
-      title: "BROAD · 22%",
-      summary: "Org-wide calendar.read; fewer round-trips.",
-      clusterId: "security",
-      planSourceTabId: "sec-py",
-      sources: [src("Tradeoff memo", "file")],
+      title: "TIERS - 58%",
+      summary: "Subscription type controls limits for budgets, groups, and exports.",
+      clusterId: "account",
+      planSourceTabId: "auth-ts",
+      sources: [src("Feature: multiple subscription types", "feature")],
       optionsAsSeparateBranches: true,
       options: [
-        { id: "stb1", label: "Risk", confidence: 45, summary: "Larger blast radius." },
-        { id: "stb2", label: "OK", confidence: 55, summary: "Internal-only deployment." },
+        { id: "ua-free", label: "Free", confidence: 45, summary: "Small group and budget limits." },
+        { id: "ua-plus", label: "Plus", confidence: 42, summary: "Larger groups and recurring costs." },
+        { id: "ua-family", label: "Family", confidence: 13, summary: "Household-oriented billing." },
       ],
     },
   },
   {
-    id: "st-broad-risk",
+    id: "ua-free",
     type: "branch",
-    position: { x: 268, y: 300 },
+    position: { x: 250, y: 320 },
     data: {
-      title: "RISK · 45%",
-      summary: "Larger blast radius from wide calendar scope.",
-      clusterId: "security",
-      planSourceTabId: "sec-py",
-      sources: [src("Threat model note", "assumption")],
+      title: "FREE - 45%",
+      summary: "Useful for onboarding and baseline usage.",
+      clusterId: "account",
+      planSourceTabId: "auth-ts",
+      sources: [src("Pricing assumption", "assumption")],
     },
   },
   {
-    id: "st-broad-ok",
+    id: "ua-plus",
     type: "branch",
-    position: { x: 532, y: 300 },
+    position: { x: 416, y: 320 },
     data: {
-      title: "OK · 55%",
-      summary: "Internal-only deployment constrains blast radius.",
-      clusterId: "security",
-      planSourceTabId: "sec-py",
-      sources: [src("Internal deployment checklist", "file")],
+      title: "PLUS - 42%",
+      summary: "Unlock recurring costs and more categories.",
+      clusterId: "account",
+      planSourceTabId: "auth-ts",
+      sources: [src("Subscription tier note", "feature")],
     },
   },
+];
+
+export const accountTreeEdges: Edge[] = [
+  { id: "ua-e1", source: "ua-root", target: "ua-signin", type: "smoothstep", animated: false },
+  { id: "ua-e2", source: "ua-root", target: "ua-subscription", type: "smoothstep", animated: false },
+  { id: "ua-e3", source: "ua-subscription", target: "ua-free", type: "smoothstep", animated: false },
+  { id: "ua-e4", source: "ua-subscription", target: "ua-plus", type: "smoothstep", animated: false },
+];
+
+export const groupsTreeNodes: Node<DecisionNodePayload>[] = [
   {
-    id: "st-audit",
+    id: "gr-root",
     type: "decision",
-    position: { x: 400, y: 430 },
+    position: { x: 200, y: 24 },
     data: {
-      title: "audit",
-      summary: "Log scope grants and token refresh for compliance review.",
-      clusterId: "security",
-      planSourceTabId: "sec-py",
-      sources: [src("Prompt #4b — audit", "prompt")],
+      title: "Groups",
+      summary: "Define households, dining groups, trips, membership, and balances.",
+      clusterId: "groups",
+      planSourceTabId: "groups-ts",
+      sources: [src("Feature: multiple users and groups", "feature")],
+      options: [
+        { id: "gr-household", label: "Household", confidence: 52, summary: "Long-lived recurring group." },
+        { id: "gr-event", label: "Event", confidence: 48, summary: "Short-lived dining or trip group." },
+      ],
+    },
+  },
+  {
+    id: "gr-household",
+    type: "branch",
+    position: { x: 34, y: 210 },
+    data: {
+      title: "HOUSEHOLD - 52%",
+      summary: "Recurring rent, utilities, subscriptions, and shared bills.",
+      clusterId: "groups",
+      planSourceTabId: "groups-ts",
+      sources: [src("Household bill example", "feature")],
+    },
+  },
+  {
+    id: "gr-event",
+    type: "branch",
+    position: { x: 405, y: 200 },
+    data: {
+      title: "EVENT - 48%",
+      summary: "Dining, trips, and one-off shared costs.",
+      clusterId: "groups",
+      planSourceTabId: "groups-ts",
+      sources: [src("Dining example", "feature")],
+      optionsAsSeparateBranches: true,
+      options: [
+        { id: "gr-invite", label: "Invite", confidence: 70, summary: "Email or link invitation." },
+        { id: "gr-roles", label: "Roles", confidence: 30, summary: "Owner/member permissions." },
+      ],
+    },
+  },
+  {
+    id: "gr-invite",
+    type: "branch",
+    position: { x: 330, y: 318 },
+    data: {
+      title: "INVITE - 70%",
+      summary: "Invite members before expenses are split.",
+      clusterId: "groups",
+      planSourceTabId: "groups-ts",
+      sources: [src("GroupService.ts", "file")],
+    },
+  },
+  {
+    id: "gr-balances",
+    type: "decision",
+    position: { x: 285, y: 488 },
+    data: {
+      title: "Member balances",
+      summary: "Show who owes whom across submitted group expenses.",
+      clusterId: "groups",
+      planSourceTabId: "groups-ts",
+      sources: [src("Feature: group balances", "feature")],
       confirmed: true,
     },
   },
 ];
 
-export const securityTreeEdges: Edge[] = [
-  { id: "st-e1", source: "st-root", target: "st-narrow", type: "smoothstep", animated: false },
-  { id: "st-e2", source: "st-root", target: "st-broad", type: "smoothstep", animated: false },
-  { id: "st-e3r", source: "st-broad", target: "st-broad-risk", type: "smoothstep", animated: false },
-  { id: "st-e3k", source: "st-broad", target: "st-broad-ok", type: "smoothstep", animated: false },
-  { id: "st-e4r", source: "st-broad-risk", target: "st-audit", type: "smoothstep", animated: false },
-  { id: "st-e4k", source: "st-broad-ok", target: "st-audit", type: "smoothstep", animated: false },
+export const groupsTreeEdges: Edge[] = [
+  { id: "gr-e1", source: "gr-root", target: "gr-household", type: "smoothstep", animated: false },
+  { id: "gr-e2", source: "gr-root", target: "gr-event", type: "smoothstep", animated: false },
+  { id: "gr-e3", source: "gr-event", target: "gr-invite", type: "smoothstep", animated: false },
+  { id: "gr-e4", source: "gr-household", target: "gr-balances", type: "smoothstep", animated: false },
+  { id: "gr-e5", source: "gr-invite", target: "gr-balances", type: "smoothstep", animated: false },
 ];
 
-/** application.yml / infra decision tree. */
-export const infraTreeNodes: Node<DecisionNodePayload>[] = [
+export const budgetingTreeNodes: Node<DecisionNodePayload>[] = [
   {
-    id: "it-root",
+    id: "bu-root",
     type: "decision",
-    position: { x: 200, y: 20 },
+    position: { x: 200, y: 24 },
     data: {
-      title: "application.yml",
-      summary: "Sync cadence, retries, and rate limits for outbound calendar calls.",
-      clusterId: "infra",
-      planSourceTabId: "yaml",
-      sources: [src("Prompt #6 — ops", "prompt"), src("deploy/calendar-sync.yml", "file")],
+      title: "Budgeting",
+      summary: "Monthly budgets, category limits, alerts, and spending summaries.",
+      clusterId: "budgeting",
+      planSourceTabId: "budgeting-ts",
+      sources: [src("Feature: monthly budgeting", "feature")],
       options: [
-        { id: "it-y", label: "Yes", confidence: 64, summary: "Exponential backoff + circuit breaker." },
-        { id: "it-n", label: "No", confidence: 36, summary: "Fixed polling interval." },
+        { id: "bu-category", label: "Category", confidence: 64, summary: "Budget by category." },
+        { id: "bu-user", label: "User", confidence: 36, summary: "Budget by person." },
       ],
     },
   },
   {
-    id: "it-expo",
+    id: "bu-categories",
     type: "branch",
-    position: { x: 32, y: 200 },
+    position: { x: 32, y: 210 },
     data: {
-      title: "EXPO · 64%",
-      summary: "Decorrelated jitter; cap at 8s (see ApiClient).",
-      clusterId: "infra",
-      planSourceTabId: "yaml",
-      sources: [src("ApiClient.kt", "file")],
+      title: "CATEGORIES - 64%",
+      summary: "Food, rent, utilities, subscriptions, and shared one-offs.",
+      clusterId: "budgeting",
+      planSourceTabId: "budgeting-ts",
+      sources: [src("BudgetingService.ts", "file")],
     },
   },
-    {
-    id: "it-fixed",
+  {
+    id: "bu-auth-drift",
     type: "branch",
-    position: { x: 400, y: 200 },
+    position: { x: 412, y: 200 },
     data: {
-      title: "FIXED · 36%",
-      summary: "30s poll; simpler ops, higher idle load.",
-      clusterId: "infra",
-      planSourceTabId: "yaml",
-      sources: [src("deploy/calendar-sync.yml", "file")],
+      title: "SIGN-IN - 41%",
+      summary: "Email/password access appears here because it touches personal budget settings.",
+      clusterId: "budgeting",
+      planSourceTabId: "budgeting-ts",
+      sources: [src("Assistant allocation", "assumption")],
       optionsAsSeparateBranches: true,
       options: [
-        { id: "itf-burst", label: "Burst cap", confidence: 55, summary: "Sharper per-minute ceiling for traffic spikes." },
-        { id: "itf-sust", label: "Sustained", confidence: 45, summary: "Reserve headroom for steady average load." },
+        { id: "bu-auth", label: "Keep", confidence: 41, summary: "Budget settings need identity." },
+        { id: "bu-move", label: "Move", confidence: 59, summary: "Better handled by Account & Access." },
       ],
     },
   },
   {
-    id: "it-fixed-burst",
+    id: "bu-alerts",
     type: "branch",
-    position: { x: 330, y: 305 },
+    position: { x: 270, y: 318 },
     data: {
-      title: "BURST · 55%",
-      summary: "Sharper per-minute ceiling for traffic spikes.",
-      clusterId: "infra",
-      planSourceTabId: "yaml",
-      sources: [src("Traffic envelope", "feature")],
+      title: "ALERTS - 55%",
+      summary: "Notify when monthly spend approaches a limit.",
+      clusterId: "budgeting",
+      planSourceTabId: "budgeting-ts",
+      sources: [src("Feature: budget alerts", "feature")],
     },
   },
   {
-    id: "it-fixed-sustained",
+    id: "bu-summary",
     type: "branch",
-    position: { x: 535, y: 305 },
+    position: { x: 520, y: 318 },
     data: {
-      title: "SUSTAINED · 45%",
-      summary: "Reserve headroom for steady average load.",
-      clusterId: "infra",
-      planSourceTabId: "yaml",
-      sources: [src("Capacity planning", "assumption")],
+      title: "SUMMARY - 45%",
+      summary: "Monthly summary of spend by category and group.",
+      clusterId: "budgeting",
+      planSourceTabId: "budgeting-ts",
+      sources: [src("Feature: monthly report", "feature")],
     },
   },
+];
+
+export const budgetingTreeEdges: Edge[] = [
+  { id: "bu-e1", source: "bu-root", target: "bu-categories", type: "smoothstep", animated: false },
+  { id: "bu-e2", source: "bu-root", target: "bu-auth-drift", type: "smoothstep", animated: false },
+  { id: "bu-e3", source: "bu-categories", target: "bu-alerts", type: "smoothstep", animated: false },
+  { id: "bu-e4", source: "bu-auth-drift", target: "bu-summary", type: "smoothstep", animated: false },
+];
+
+export const securityTreeNodes: Node<DecisionNodePayload>[] = [
   {
-    id: "it-obs",
+    id: "se-root",
     type: "decision",
-    position: { x: 285, y: 470 },
+    position: { x: 200, y: 24 },
     data: {
-      title: "observability",
-      summary: "Structured logs + metrics on retry budget exhaustion.",
-      clusterId: "infra",
-      planSourceTabId: "yaml",
-      confirmed: false,
-      sources: [src("Runbook — sync", "feature")],
+      title: "Security",
+      summary: "Financial information needs access control, auditability, and data-protection boundaries.",
+      clusterId: "security",
+      planSourceTabId: "security-ts",
+      sources: [src("Client priority: financial safety", "prompt")],
+      options: [
+        { id: "se-access", label: "Access", confidence: 80, summary: "Role and membership-based access." },
+        { id: "se-audit", label: "Audit", confidence: 20, summary: "Track sensitive changes." },
+      ],
+    },
+  },
+  {
+    id: "se-access",
+    type: "branch",
+    position: { x: 35, y: 210 },
+    data: {
+      title: "ACCESS - 80%",
+      summary: "Only owners or group members can view financial records.",
+      clusterId: "security",
+      planSourceTabId: "security-ts",
+      sources: [src("SecurityPolicy.ts", "file")],
+    },
+  },
+  {
+    id: "se-audit",
+    type: "branch",
+    position: { x: 405, y: 200 },
+    data: {
+      title: "AUDIT - 20%",
+      summary: "Record changes to expenses, budgets, and settlements.",
+      clusterId: "security",
+      planSourceTabId: "security-ts",
+      sources: [src("Financial audit note", "feature")],
+      optionsAsSeparateBranches: true,
+      options: [
+        { id: "se-budget-summary", label: "Budget summary", confidence: 46, summary: "Monthly budget summary suggested here." },
+        { id: "se-invite-ui", label: "Invite UI", confidence: 31, summary: "Group invite UI suggested here." },
+        { id: "se-encrypt", label: "Encrypt", confidence: 23, summary: "Protect financial records at rest." },
+      ],
+    },
+  },
+  {
+    id: "se-budget-summary",
+    type: "branch",
+    position: { x: 246, y: 318 },
+    data: {
+      title: "BUDGET SUMMARY - 46%",
+      summary: "A product reporting feature appears in Security.",
+      clusterId: "security",
+      planSourceTabId: "security-ts",
+      sources: [src("Assistant suggestion", "assumption")],
+    },
+  },
+  {
+    id: "se-invite-ui",
+    type: "branch",
+    position: { x: 438, y: 318 },
+    data: {
+      title: "INVITE UI - 31%",
+      summary: "A group interface feature appears in Security.",
+      clusterId: "security",
+      planSourceTabId: "security-ts",
+      sources: [src("Assistant suggestion", "assumption")],
+    },
+  },
+  {
+    id: "se-encrypt",
+    type: "branch",
+    position: { x: 610, y: 318 },
+    data: {
+      title: "ENCRYPT - 23%",
+      summary: "Encrypt financial records and sensitive identifiers.",
+      clusterId: "security",
+      planSourceTabId: "security-ts",
+      sources: [src("Security requirement", "feature")],
     },
   },
 ];
 
-export const infraTreeEdges: Edge[] = [
-  { id: "it-e1", source: "it-root", target: "it-expo", type: "smoothstep", animated: false },
-  { id: "it-e2", source: "it-root", target: "it-fixed", type: "smoothstep", animated: false },
-  { id: "it-e3b", source: "it-fixed", target: "it-fixed-burst", type: "smoothstep", animated: false },
-  { id: "it-e3s", source: "it-fixed", target: "it-fixed-sustained", type: "smoothstep", animated: false },
-  { id: "it-e4e", source: "it-expo", target: "it-obs", type: "smoothstep", animated: false },
-  { id: "it-e4b", source: "it-fixed-burst", target: "it-obs", type: "smoothstep", animated: false },
-  { id: "it-e4s", source: "it-fixed-sustained", target: "it-obs", type: "smoothstep", animated: false },
+export const securityTreeEdges: Edge[] = [
+  { id: "se-e1", source: "se-root", target: "se-access", type: "smoothstep", animated: false },
+  { id: "se-e2", source: "se-root", target: "se-audit", type: "smoothstep", animated: false },
+  { id: "se-e3", source: "se-audit", target: "se-budget-summary", type: "smoothstep", animated: false },
+  { id: "se-e4", source: "se-audit", target: "se-invite-ui", type: "smoothstep", animated: false },
+  { id: "se-e5", source: "se-audit", target: "se-encrypt", type: "smoothstep", animated: false },
 ];
 
-export type PlanTreeKind = "core" | "security" | "infra";
+export const PLAN_CLUSTER_TREE_ROOT_IDS = new Set<string>(["co-root", "ua-root", "gr-root", "bu-root", "se-root"]);
 
 const CLUSTER_FRAME_LABEL: Record<PlanTreeKind, string> = {
   core: "Core",
+  account: "User Account & Access",
+  groups: "Groups",
+  budgeting: "Budgeting",
   security: "Security",
-  infra: "Infra",
 };
 
 const CLUSTER_ID_MAP: Record<PlanTreeKind, ClusterId> = {
   core: "core",
+  account: "account",
+  groups: "groups",
+  budgeting: "budgeting",
   security: "security",
-  infra: "infra",
 };
 
-/** Map explorer program-tab id → which mock tree to show in Plan → Tree. */
+const PREFIX_BY_KIND: Record<PlanTreeKind, string> = {
+  core: "co-",
+  account: "ua-",
+  groups: "gr-",
+  budgeting: "bu-",
+  security: "se-",
+};
+
 export function planTreeKindFromProgramTabId(tabId: string): PlanTreeKind {
   const raw = tabId.replace(/\\/g, "/").toLowerCase();
-  if (raw === "sec-py" || raw.endsWith("/security.py") || raw.endsWith("security.py")) return "security";
-  if (raw === "yaml" || raw.endsWith("/application.yml") || raw.endsWith("application.yml")) return "infra";
+  if (raw === "auth-ts" || raw.endsWith("/authservice.ts") || raw.endsWith("authservice.ts")) return "account";
+  if (raw === "groups-ts" || raw.endsWith("/groupservice.ts") || raw.endsWith("groupservice.ts")) return "groups";
+  if (raw === "budgeting-ts" || raw.endsWith("/budgetingservice.ts") || raw.endsWith("budgetingservice.ts")) return "budgeting";
+  if (raw === "security-ts" || raw.endsWith("/securitypolicy.ts") || raw.endsWith("securitypolicy.ts")) return "security";
   return "core";
 }
 
-/** Infer tree slice from mock node id prefix (dt- / st- / it-). */
 export function kindFromNodeId(nodeId: string): PlanTreeKind | null {
-  if (nodeId.startsWith("dt-")) return "core";
-  if (nodeId.startsWith("st-")) return "security";
-  if (nodeId.startsWith("it-")) return "infra";
+  if (nodeId.startsWith("co-")) return "core";
+  if (nodeId.startsWith("ua-")) return "account";
+  if (nodeId.startsWith("gr-")) return "groups";
+  if (nodeId.startsWith("bu-")) return "budgeting";
+  if (nodeId.startsWith("se-")) return "security";
   return null;
 }
 
-/** `cluster-overview-${kind}` frame id → plan tree kind. */
 export function planKindFromClusterFrameId(frameId: string): PlanTreeKind | null {
   if (frameId === "cluster-overview-core") return "core";
+  if (frameId === "cluster-overview-account") return "account";
+  if (frameId === "cluster-overview-groups") return "groups";
+  if (frameId === "cluster-overview-budgeting") return "budgeting";
   if (frameId === "cluster-overview-security") return "security";
-  if (frameId === "cluster-overview-infra") return "infra";
   return null;
 }
 
-/**
- * React Flow’s fitView only includes measured nodes; frames may be unmeasured — use decision/branch ids.
- */
 export function nodesArgForClusterFit(kind: PlanTreeKind, flowNodes: Node[]): { id: string }[] {
-  const prefix = kind === "core" ? "dt-" : kind === "security" ? "st-" : "it-";
+  const prefix = PREFIX_BY_KIND[kind];
   const out: { id: string }[] = [];
   for (const n of flowNodes) {
     if ((n.type === "decision" || n.type === "branch") && n.id.startsWith(prefix)) {
@@ -396,16 +506,19 @@ function treeNodesAndEdges(kind: PlanTreeKind): { nodes: Node<DecisionNodePayloa
   switch (kind) {
     case "core":
       return { nodes: decisionTreeNodes, edges: decisionTreeEdges };
+    case "account":
+      return { nodes: accountTreeNodes, edges: accountTreeEdges };
+    case "groups":
+      return { nodes: groupsTreeNodes, edges: groupsTreeEdges };
+    case "budgeting":
+      return { nodes: budgetingTreeNodes, edges: budgetingTreeEdges };
     case "security":
       return { nodes: securityTreeNodes, edges: securityTreeEdges };
-    case "infra":
-      return { nodes: infraTreeNodes, edges: infraTreeEdges };
     default:
       return { nodes: decisionTreeNodes, edges: decisionTreeEdges };
   }
 }
 
-/** Plan tree nodes that surface option/confidence rows — same ordering as Program editor `decision:` markers. */
 export function decisionHudSlotsForProgramTab(programTabId: string): Array<{
   nodeId: string;
   clusterId: ClusterId;
@@ -452,7 +565,7 @@ function coreTreeBoundingRect(content: Node<DecisionNodePayload>[]): { minX: num
   for (const n of content) {
     const d = n.data;
     const hasOptions = !!(d.options && d.options.length);
-    const mini = hasOptions && d.options && d.options.length > 2;
+    const mini = !!(hasOptions && d.options && d.options.length > 2);
     const { w, h } = estimateTreeNodeSize(n.type, hasOptions, mini);
     minX = Math.min(minX, n.position.x);
     minY = Math.min(minY, n.position.y);
@@ -462,10 +575,6 @@ function coreTreeBoundingRect(content: Node<DecisionNodePayload>[]): { minX: num
   return { minX, minY, maxX, maxY };
 }
 
-/**
- * Expand node spacing without changing the logical structure.
- * Keeps the root anchored and pushes siblings/descendants farther apart.
- */
 function stretchTreeLayout(
   nodes: Node<DecisionNodePayload>[],
   scaleX: number,
@@ -487,9 +596,6 @@ function stretchTreeLayout(
   );
 }
 
-/**
- * Plan → Tree: one cluster mat + the decision tree for the selected explorer file (`planExplorerTabId`).
- */
 export function planTreePackForExplorerTab(programTabId: string): { nodes: Node[]; edges: Edge[] } {
   const kind = planTreeKindFromProgramTabId(programTabId);
   const { nodes: rawContent, edges } = treeNodesAndEdges(kind);
@@ -512,11 +618,8 @@ export function planTreePackForExplorerTab(programTabId: string): { nodes: Node[
   };
 }
 
-const OVERVIEW_ORDER: PlanTreeKind[] = ["security", "core", "infra"];
+const OVERVIEW_ORDER: PlanTreeKind[] = ["core", "account", "groups", "budgeting", "security"];
 
-/**
- * Plan → Cluster: three decision trees (same mock content as Tree), Security | Core | Infra columns.
- */
 export function clusterOverviewPack(): { nodes: Node[]; edges: Edge[] } {
   const allNodes: Node<ClusterFrameData | DecisionNodePayload>[] = [];
   const allEdges: Edge[] = [];
@@ -561,14 +664,13 @@ export function clusterOverviewPack(): { nodes: Node[]; edges: Edge[] } {
   return { nodes: allNodes as Node[], edges: allEdges };
 }
 
-/**
- * Keeps each `cluster-overview-*` mat hugging its decision/branch nodes after drags.
- */
 export function layoutClusterFramesForOverview(nodes: Node[]): Node[] {
   const contentByKind: Record<PlanTreeKind, Node<DecisionNodePayload>[]> = {
     core: [],
+    account: [],
+    groups: [],
+    budgeting: [],
     security: [],
-    infra: [],
   };
   for (const n of nodes) {
     if (n.type !== "decision" && n.type !== "branch") continue;
@@ -608,55 +710,24 @@ export function layoutClusterFramesForOverview(nodes: Node[]): Node[] {
   });
 }
 
-/** Positions are seeds; Plan runs d3-force when opening Node graph */
 export const fileGraphNodes: Node<FileGraphPayload>[] = [
   {
-    id: "fg-main",
+    id: "fg-shell",
     type: "file",
     position: { x: 0, y: 0 },
     data: {
-      path: "Main.java",
-      clusterShare: { security: 0.25, core: 0.55, infra: 0.2 },
+      path: "TerminusApp.tsx",
+      clusterShare: { core: 0.3, account: 0.18, groups: 0.18, budgeting: 0.18, security: 0.16 },
       graphEmphasis: "none",
     },
   },
   {
-    id: "fg-cal",
+    id: "fg-split",
     type: "file",
     position: { x: 0, y: 0 },
     data: {
-      path: "Calendar.java",
-      clusterShare: { security: 0.15, core: 0.75, infra: 0.1 },
-      graphEmphasis: "none",
-    },
-  },
-  {
-    id: "fg-sec",
-    type: "file",
-    position: { x: 0, y: 0 },
-    data: {
-      path: "Security.py",
-      clusterShare: { security: 0.78, core: 0.12, infra: 0.1 },
-      graphEmphasis: "none",
-    },
-  },
-  {
-    id: "fg-api",
-    type: "file",
-    position: { x: 0, y: 0 },
-    data: {
-      path: "ApiClient.kt",
-      clusterShare: { security: 0.35, core: 0.35, infra: 0.3 },
-      graphEmphasis: "none",
-    },
-  },
-  {
-    id: "fg-config",
-    type: "file",
-    position: { x: 0, y: 0 },
-    data: {
-      path: "application.yml",
-      clusterShare: { security: 0.2, core: 0.25, infra: 0.55 },
+      path: "SplitCalculator.ts",
+      clusterShare: { core: 0.82, account: 0.03, groups: 0.08, budgeting: 0.05, security: 0.02 },
       graphEmphasis: "none",
     },
   },
@@ -665,18 +736,61 @@ export const fileGraphNodes: Node<FileGraphPayload>[] = [
     type: "file",
     position: { x: 0, y: 0 },
     data: {
-      path: "AuthFilter.java",
-      clusterShare: { security: 0.62, core: 0.28, infra: 0.1 },
+      path: "AuthService.ts",
+      clusterShare: { core: 0.05, account: 0.68, groups: 0.02, budgeting: 0.05, security: 0.2 },
+      graphEmphasis: "none",
+    },
+  },
+  {
+    id: "fg-groups",
+    type: "file",
+    position: { x: 0, y: 0 },
+    data: {
+      path: "GroupService.ts",
+      clusterShare: { core: 0.1, account: 0.1, groups: 0.72, budgeting: 0.03, security: 0.05 },
+      graphEmphasis: "none",
+    },
+  },
+  {
+    id: "fg-budget",
+    type: "file",
+    position: { x: 0, y: 0 },
+    data: {
+      path: "BudgetingService.ts",
+      clusterShare: { core: 0, account: 0, groups: 0, budgeting: 0, security: 1 },
+      graphEmphasis: "none",
+    },
+  },
+  {
+    id: "fg-security",
+    type: "file",
+    position: { x: 0, y: 0 },
+    data: {
+      path: "SecurityPolicy.ts",
+      clusterShare: { core: 0.05, account: 0.12, groups: 0.03, budgeting: 0, security: 0.8 },
+      graphEmphasis: "none",
+    },
+  },
+  {
+    id: "fg-subscriptions",
+    type: "file",
+    position: { x: 0, y: 0 },
+    data: {
+      path: "SubscriptionPlans.ts",
+      clusterShare: { core: 0.24, account: 0.38, groups: 0.06, budgeting: 0.22, security: 0.1 },
       graphEmphasis: "none",
     },
   },
 ];
 
 export const fileGraphEdges: Edge[] = [
-  { id: "fe1", source: "fg-main", target: "fg-cal" },
-  { id: "fe2", source: "fg-main", target: "fg-sec" },
-  { id: "fe3", source: "fg-cal", target: "fg-api" },
-  { id: "fe4", source: "fg-sec", target: "fg-api" },
-  { id: "fe5", source: "fg-main", target: "fg-config" },
-  { id: "fe6", source: "fg-api", target: "fg-auth" },
+  { id: "fe1", source: "fg-shell", target: "fg-split" },
+  { id: "fe2", source: "fg-shell", target: "fg-auth" },
+  { id: "fe3", source: "fg-shell", target: "fg-groups" },
+  { id: "fe4", source: "fg-shell", target: "fg-budget" },
+  { id: "fe5", source: "fg-shell", target: "fg-security" },
+  { id: "fe6", source: "fg-auth", target: "fg-security" },
+  { id: "fe7", source: "fg-groups", target: "fg-split" },
+  { id: "fe8", source: "fg-budget", target: "fg-subscriptions" },
+  { id: "fe9", source: "fg-auth", target: "fg-subscriptions" },
 ];
