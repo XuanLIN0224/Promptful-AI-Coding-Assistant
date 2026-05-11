@@ -102,6 +102,21 @@ function descendantsHiddenByCollapse(edges: readonly Edge[], collapsed: Readonly
   return hidden;
 }
 
+function descendantIdsForRoots(edges: readonly Edge[], rootIds: Iterable<string>): Set<string> {
+  const children = childrenByParent(edges);
+  const hidden = new Set<string>();
+  for (const rootId of rootIds) {
+    const stack = [...(children.get(rootId) ?? [])];
+    while (stack.length > 0) {
+      const cur = stack.pop();
+      if (!cur || hidden.has(cur)) continue;
+      hidden.add(cur);
+      for (const child of children.get(cur) ?? []) stack.push(child);
+    }
+  }
+  return hidden;
+}
+
 function nodeKind(node: Node): PlanTreeKind | null {
   if (node.type === "clusterFrame") return planKindFromClusterFrameId(node.id);
   return kindFromNodeId(node.id);
@@ -136,6 +151,7 @@ function Inner({
   generatedFeatureNodeIds,
   onClusterComplete,
   onTreeUndoNode,
+  onTreeNodesCollapsed,
 }: {
   mode: PlanCanvasMode;
   planExplorerTabId: string;
@@ -150,6 +166,7 @@ function Inner({
   generatedFeatureNodeIds: ReadonlySet<string>;
   onClusterComplete: (kind: PlanTreeKind) => void;
   onTreeUndoNode: (nodeId: string, kind: PlanTreeKind) => void;
+  onTreeNodesCollapsed: (nodeIds: string[], kind: PlanTreeKind) => void;
 }) {
   const isOverview = mode === "overview";
   const isGraph = mode === "nodegraph";
@@ -470,13 +487,22 @@ function Inner({
         }));
       }
       const selectedPath = new Set(pathNodeIdsFromRootResolved(node.id, incomingParents, nextParentChoiceForKind));
-      setCollapsedTreeNodeIds(() => {
+      setCollapsedTreeNodeIds((prevCollapsed) => {
         const next = initiallyCollapsedParentIds(allTreeParents);
+        const newlyCollapsedParents: string[] = [];
         for (const parentId of allTreeParents) {
           if (kindFromNodeId(parentId) !== kind) continue;
-          if (selectedPath.has(parentId)) next.delete(parentId);
-          else next.add(parentId);
+          if (selectedPath.has(parentId)) {
+            next.delete(parentId);
+          } else {
+            next.add(parentId);
+            if (!prevCollapsed.has(parentId)) newlyCollapsedParents.push(parentId);
+          }
         }
+        const collapsedDescendants = [...descendantIdsForRoots(edges, newlyCollapsedParents)].filter(
+          (id) => kindFromNodeId(id) === kind
+        );
+        if (collapsedDescendants.length > 0) onTreeNodesCollapsed(collapsedDescendants, kind);
         return next;
       });
       onPlanTreeSelectionsChange((prev) => ({ ...prev, [kind]: node.id }));
@@ -490,7 +516,9 @@ function Inner({
       isOverview,
       onPlanTreeSelectionsChange,
       onClusterComplete,
+      onTreeNodesCollapsed,
       edges,
+      collapsedTreeNodeIds,
       planTreeSelections,
       treeParentChoiceByKind,
     ]
@@ -598,6 +626,7 @@ export function PlanCanvas({
   generatedFeatureNodeIds,
   onClusterComplete,
   onTreeUndoNode,
+  onTreeNodesCollapsed,
 }: {
   mode: PlanCanvasMode;
   planExplorerTabId: string;
@@ -612,6 +641,7 @@ export function PlanCanvas({
   generatedFeatureNodeIds: ReadonlySet<string>;
   onClusterComplete: (kind: PlanTreeKind) => void;
   onTreeUndoNode: (nodeId: string, kind: PlanTreeKind) => void;
+  onTreeNodesCollapsed: (nodeIds: string[], kind: PlanTreeKind) => void;
 }) {
   const stableOnSelection = useCallback((p: OnSelectionChangeParams) => onSelection(p), [onSelection]);
   return (
@@ -632,6 +662,7 @@ export function PlanCanvas({
             generatedFeatureNodeIds={generatedFeatureNodeIds}
             onClusterComplete={onClusterComplete}
             onTreeUndoNode={onTreeUndoNode}
+            onTreeNodesCollapsed={onTreeNodesCollapsed}
           />
         </ReactFlowProvider>
       </div>

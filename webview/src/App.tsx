@@ -129,6 +129,18 @@ function generatedFeatureLabel(request: GeneratedFeatureRequest): string {
   return cleanedTitle || request.summary.split(".")[0] || "Generated feature";
 }
 
+const TERMINAL_NODE_IDS_BY_KIND: Record<PlanTreeKind, ReadonlySet<string>> = {
+  core: new Set(["co-settle"]),
+  account: new Set(["ua-signin", "ua-free", "ua-plus"]),
+  groups: new Set(["gr-balances"]),
+  budgeting: new Set(["bu-alerts", "bu-summary"]),
+  security: new Set(["se-access", "se-budget-summary", "se-invite-ui", "se-encrypt"]),
+};
+
+function featureIdsForNode(nodeId: string): string[] {
+  return [`feat-local-${nodeId}`, `feat-global-${nodeId}`];
+}
+
 export default function App() {
   const [showIntro, setShowIntro] = useState(true);
   const [tab, setTab] = useState<WorkspaceTab>("plan");
@@ -169,6 +181,25 @@ export default function App() {
 
   const completedClusterCount = completedClusterIds.size;
   const clusterTotal = CLUSTERS.length;
+
+  useEffect(() => {
+    setCompletedClusterIds((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      (Object.keys(TERMINAL_NODE_IDS_BY_KIND) as PlanTreeKind[]).forEach((kind) => {
+        const selection = planTreeSelections[kind] ?? null;
+        const complete = selection ? TERMINAL_NODE_IDS_BY_KIND[kind].has(selection) : false;
+        if (complete && !next.has(kind)) {
+          next.add(kind);
+          changed = true;
+        } else if (!complete && next.has(kind)) {
+          next.delete(kind);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [planTreeSelections]);
 
   const savedPlanViewport = planMode === "overview" ? planViewportOverview : planViewportNodegraph;
 
@@ -220,13 +251,13 @@ export default function App() {
         return p?.label ?? programCatalog[0]?.label ?? "Open a file in VS Code";
       }
       case "plan": {
-        const p = programCatalog.find((t) => t.id === planExplorerTabId);
-        return p?.label ?? "Plan";
+        if (planMode === "nodegraph") return "Node graph";
+        return CLUSTERS.find((c) => c.id === clusterFocus)?.label ?? "Overview";
       }
       default:
         return programCatalog[0]?.label ?? "Plan";
     }
-  }, [tab, programTabId, planExplorerTabId, programCatalog]);
+  }, [tab, planMode, clusterFocus, programTabId, programCatalog]);
 
   const syncContextToProgramTab = useCallback((programTabId: string) => {
     const t = programCatalog.find((x) => x.id === programTabId);
@@ -387,21 +418,20 @@ export default function App() {
   }, []);
 
   const handleTreeUndoNode = useCallback((nodeId: string, kind: PlanTreeKind) => {
-    const localId = `feat-local-${nodeId}`;
-    const globalId = `feat-global-${nodeId}`;
+    const idsToRemove = new Set(featureIdsForNode(nodeId));
     setGeneratedFeatureNodeIds((prev) => {
       if (!prev.has(nodeId)) return prev;
       const next = new Set(prev);
       next.delete(nodeId);
       return next;
     });
-    setGlobalFeatures((prev) => prev.filter((item) => item.id !== globalId));
+    setGlobalFeatures((prev) => prev.filter((item) => !idsToRemove.has(item.id)));
     setLocalByCluster((prev) => ({
       ...prev,
-      [kind]: prev[kind].filter((item) => item.id !== localId),
+      [kind]: prev[kind].filter((item) => !idsToRemove.has(item.id)),
     }));
     setActiveContext((prev) =>
-      prev && (prev.id === localId || prev.id === globalId) ? null : prev
+      prev && idsToRemove.has(prev.id) ? null : prev
     );
     setCompletedClusterIds((prev) => {
       if (!prev.has(kind)) return prev;
@@ -409,6 +439,26 @@ export default function App() {
       next.delete(kind);
       return next;
     });
+  }, []);
+
+  const handleTreeNodesCollapsed = useCallback((nodeIds: string[], kind: PlanTreeKind) => {
+    if (nodeIds.length === 0) return;
+    const nodeIdSet = new Set(nodeIds);
+    const idsToRemove = new Set(nodeIds.flatMap(featureIdsForNode));
+    setGeneratedFeatureNodeIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const nodeId of nodeIdSet) {
+        if (next.delete(nodeId)) changed = true;
+      }
+      return changed ? next : prev;
+    });
+    setGlobalFeatures((prev) => prev.filter((item) => !idsToRemove.has(item.id)));
+    setLocalByCluster((prev) => ({
+      ...prev,
+      [kind]: prev[kind].filter((item) => !idsToRemove.has(item.id)),
+    }));
+    setActiveContext((prev) => (prev && idsToRemove.has(prev.id) ? null : prev));
   }, []);
 
   const applyPlan = useCallback(() => {
@@ -491,6 +541,49 @@ export default function App() {
     [removeAttachmentMetadata]
   );
 
+  const cleanupGeneratedFeatureState = useCallback((featureId: string) => {
+    const nodeId = featureId.replace(/^feat-(local|global)-/, "");
+    if (nodeId === featureId) return;
+    setGeneratedFeatureNodeIds((prev) => {
+      if (!prev.has(nodeId)) return prev;
+      const next = new Set(prev);
+      next.delete(nodeId);
+      return next;
+    });
+  }, []);
+
+  const renameGlobalFeature = useCallback((featureId: string, label: string) => {
+    setGlobalFeatures((prev) => prev.map((item) => (item.id === featureId ? { ...item, label } : item)));
+  }, []);
+
+  const removeGlobalFeature = useCallback(
+    (featureId: string) => {
+      setGlobalFeatures((prev) => prev.filter((item) => item.id !== featureId));
+      setActiveContext((prev) => (prev?.kind === "global" && prev.id === featureId ? null : prev));
+      cleanupGeneratedFeatureState(featureId);
+    },
+    [cleanupGeneratedFeatureState]
+  );
+
+  const renameLocalFeature = useCallback((cluster: ClusterId, featureId: string, label: string) => {
+    setLocalByCluster((prev) => ({
+      ...prev,
+      [cluster]: prev[cluster].map((item) => (item.id === featureId ? { ...item, label } : item)),
+    }));
+  }, []);
+
+  const removeLocalFeature = useCallback(
+    (cluster: ClusterId, featureId: string) => {
+      setLocalByCluster((prev) => ({
+        ...prev,
+        [cluster]: prev[cluster].filter((item) => item.id !== featureId),
+      }));
+      setActiveContext((prev) => (prev?.kind === "local" && prev.id === featureId ? null : prev));
+      cleanupGeneratedFeatureState(featureId);
+    },
+    [cleanupGeneratedFeatureState]
+  );
+
   const sourceViewerAttachment = useMemo(
     () => (sourceViewerId ? attachments.find((a) => a.id === sourceViewerId) ?? null : null),
     [sourceViewerId, attachments]
@@ -530,6 +623,40 @@ export default function App() {
     () => attachments.map((a) => ({ id: a.id, kind: a.kind, label: a.label })),
     [attachments]
   );
+
+  const programFileItems = useMemo(
+    () => (planApplied ? programCatalog.map((file) => ({ id: file.id, label: file.label, path: file.path })) : []),
+    [planApplied, programCatalog]
+  );
+
+  const pickProgramFileFromSidebar = useCallback(
+    (fileId: string) => {
+      setShowIntro(false);
+      setTab("program");
+      handleProgramTabChange(fileId);
+    },
+    [handleProgramTabChange]
+  );
+
+  const navigateLocalFeature = useCallback((cluster: ClusterId, featureId: string) => {
+    setClusterFocus(cluster);
+    setActiveContext({ kind: "local", id: featureId });
+    setShowAllClusters(false);
+  }, []);
+
+  const navigateCluster = useCallback((cluster: ClusterId) => {
+    setClusterFocus(cluster);
+    setShowAllClusters(false);
+    const tabForCluster: Record<ClusterId, string> = {
+      core: "split-ts",
+      account: "auth-ts",
+      groups: "groups-ts",
+      budgeting: "budgeting-ts",
+      security: "security-ts",
+    };
+    setPlanExplorerTabId(tabForCluster[cluster]);
+    setTab("plan");
+  }, []);
 
   const startSidebarResize = useCallback(
     (startX: number) => {
@@ -789,6 +916,7 @@ export default function App() {
                   generatedFeatureNodeIds={generatedFeatureNodeIds}
                   onClusterComplete={handleClusterComplete}
                   onTreeUndoNode={handleTreeUndoNode}
+                  onTreeNodesCollapsed={handleTreeNodesCollapsed}
                 />
               </>
             )}
@@ -835,12 +963,21 @@ export default function App() {
           globalItems={globalFeatures}
           localByCluster={localByCluster}
           sources={sourceItems}
+          programFiles={programFileItems}
+          onPickProgramFile={pickProgramFileFromSidebar}
+          onNavigateLocalFeature={navigateLocalFeature}
+          onNavigateCluster={navigateCluster}
+          composerPrompt={prompt}
           onReorderGlobal={setGlobalFeatures}
           onReorderLocal={(cluster, items) => setLocalByCluster((p) => ({ ...p, [cluster]: items }))}
           activeContext={activeContext}
           onSelectContext={setActiveContext}
           onOpenSource={setSourceViewerId}
           onRemoveSource={removeSourceFromPanel}
+          onRenameGlobal={renameGlobalFeature}
+          onRemoveGlobal={removeGlobalFeature}
+          onRenameLocal={renameLocalFeature}
+          onRemoveLocal={removeLocalFeature}
           collapsed={!featuresOpen}
           onToggleCollapsed={() => setFeaturesOpen((o) => !o)}
         />
