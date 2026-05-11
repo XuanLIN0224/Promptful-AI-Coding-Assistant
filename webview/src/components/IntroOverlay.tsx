@@ -77,9 +77,6 @@ export function IntroOverlay({
             <button type="button" className="pf-intro__mode" onClick={() => onBegin("program")}>
               Program
             </button>
-            <button type="button" className="pf-intro__mode" onClick={() => onBegin("coordinate")}>
-              Coordinate
-            </button>
             <button type="button" className="pf-intro__mode pf-intro__mode--ghost" onClick={() => onBegin("plan")}>
               Chat
             </button>

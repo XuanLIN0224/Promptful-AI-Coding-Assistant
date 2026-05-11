@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { OnSelectionChangeParams, Viewport } from "@xyflow/react";
-import type { ClusterId, DecisionNodePayload, FeatureItem, FileGraphPayload, PlanCanvasMode, WorkspaceTab } from "./types";
+import type { ClusterId, DecisionNodePayload, FeatureItem, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode, WorkspaceTab } from "./types";
 import { CLUSTERS } from "./types";
-import { CoordinatePane } from "./components/CoordinatePane";
 import { FeatureSidebar } from "./components/FeatureSidebar";
 import { IntroOverlay } from "./components/IntroOverlay";
 import type { IntroAttachment } from "./components/IntroOverlay";
@@ -17,6 +16,14 @@ import "./app.css";
 
 const INITIAL_PROGRAM_TAB = PROGRAM_EDITOR_TABS[0]?.id ?? "split-ts";
 const DEFAULT_PROGRAM_TAB_IDS = PROGRAM_EDITOR_TABS.map((tab) => tab.id);
+const PENDING_PROGRAM_TAB = {
+  id: "terminus-root",
+  label: "Terminus",
+  path: "Terminus/",
+  code: `Terminus/
+  Files will appear after the plan is applied.
+`,
+};
 const ATTACHMENT_ACTIONS = ["link", "upload"] as const;
 const RIGHT_SIDEBAR_MIN = 240;
 const RIGHT_SIDEBAR_MAX = 520;
@@ -69,12 +76,7 @@ function inferUploadKind(file: File): IntroAttachment["kind"] {
   return "document";
 }
 
-const initialGlobal: FeatureItem[] = [
-  { id: "g1", label: "Financial privacy and trust" },
-  { id: "g2", label: "Non-technical client mental model" },
-  { id: "g3", label: "Mock assistant output only" },
-  { id: "g4", label: "Provisional architecture for discussion" },
-];
+const initialGlobal: FeatureItem[] = [];
 
 function viewportNearlyEqual(a: Viewport | null, b: Viewport): boolean {
   if (!a) return false;
@@ -83,34 +85,11 @@ function viewportNearlyEqual(a: Viewport | null, b: Viewport): boolean {
 }
 
 const initialLocal = (): Record<ClusterId, FeatureItem[]> => ({
-  core: [
-    { id: "lc1", label: "Submit an expense" },
-    { id: "lc2", label: "Split costs equally or custom" },
-    { id: "lc3", label: "Track settlement status" },
-    { id: "lc4", label: "Recurring shared subscriptions" },
-  ],
-  account: [
-    { id: "la1", label: "Sign up and sign in" },
-    { id: "la2", label: "User profile and household identity" },
-    { id: "la3", label: "Subscription tier access" },
-  ],
-  groups: [
-    { id: "lg1", label: "Create household or dining group" },
-    { id: "lg2", label: "Invite group members" },
-    { id: "lg3", label: "View member balances" },
-  ],
-  budgeting: [
-    { id: "lb1", label: "Monthly budget categories" },
-    { id: "lb2", label: "Budget alerts" },
-    { id: "lb3", label: "Email/password sign-in" },
-    { id: "lb4", label: "Monthly spending summary" },
-  ],
-  security: [
-    { id: "ls1", label: "Access control for financial records" },
-    { id: "ls2", label: "Audit expense changes" },
-    { id: "ls3", label: "Monthly Budget Summary" },
-    { id: "ls4", label: "Group Invite UI" },
-  ],
+  core: [],
+  account: [],
+  groups: [],
+  budgeting: [],
+  security: [],
 });
 
 export default function App() {
@@ -125,8 +104,11 @@ export default function App() {
   const [clusterFocus, setClusterFocus] = useState<ClusterId>("core");
   const [globalFeatures, setGlobalFeatures] = useState(initialGlobal);
   const [localByCluster, setLocalByCluster] = useState(initialLocal);
+  const [completedClusterIds, setCompletedClusterIds] = useState<Set<PlanTreeKind>>(() => new Set());
+  const [generatedFeatureNodeIds, setGeneratedFeatureNodeIds] = useState<Set<string>>(() => new Set());
+  const [planApplied, setPlanApplied] = useState(false);
   const [activeContext, setActiveContext] = useState<{ kind: "global" | "local"; id: string } | null>(null);
-  const [scopeLabel, setScopeLabel] = useState<string | null>(() => PROGRAM_EDITOR_TABS.find((t) => t.id === INITIAL_PROGRAM_TAB)?.label ?? null);
+  const [scopeLabel, setScopeLabel] = useState<string | null>("Terminus");
   const [prompt, setPrompt] = useState("");
   const [attachments, setAttachments] = useState<IntroAttachment[]>([]);
   const [linkCaptureOpen, setLinkCaptureOpen] = useState(false);
@@ -136,14 +118,20 @@ export default function App() {
   const [assistantLine, setAssistantLine] = useState(() => assistantLineForProgramTab(INITIAL_PROGRAM_TAB));
   const [featuresOpen, setFeaturesOpen] = useState(true);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(320);
-  const [programOpenIds, setProgramOpenIds] = useState<string[]>(DEFAULT_PROGRAM_TAB_IDS);
-  const [programTabId, setProgramTabId] = useState(INITIAL_PROGRAM_TAB);
+  const [programOpenIds, setProgramOpenIds] = useState<string[]>([PENDING_PROGRAM_TAB.id]);
+  const [programTabId, setProgramTabId] = useState(PENDING_PROGRAM_TAB.id);
   const [workspaceProgramTabs, setWorkspaceProgramTabs] = useState<Array<{ id: string; label: string; path: string; code: string }>>([]);
 
   const programCatalog = useMemo(
-    () => (workspaceProgramTabs.length > 0 ? workspaceProgramTabs : PROGRAM_EDITOR_TABS),
-    [workspaceProgramTabs]
+    () => {
+      if (!planApplied) return [PENDING_PROGRAM_TAB];
+      return workspaceProgramTabs.length > 0 ? workspaceProgramTabs : PROGRAM_EDITOR_TABS;
+    },
+    [planApplied, workspaceProgramTabs]
   );
+
+  const completedClusterCount = completedClusterIds.size;
+  const clusterTotal = CLUSTERS.length;
 
   const savedPlanViewport = planMode === "overview" ? planViewportOverview : planViewportNodegraph;
 
@@ -194,8 +182,6 @@ export default function App() {
         const p = programCatalog.find((t) => t.id === programTabId);
         return p?.label ?? programCatalog[0]?.label ?? "Open a file in VS Code";
       }
-      case "coordinate":
-        return "Workspace session";
       case "plan": {
         const p = programCatalog.find((t) => t.id === planExplorerTabId);
         return p?.label ?? "Plan";
@@ -240,8 +226,13 @@ export default function App() {
           label: baseName(f.path as string),
           path: f.path as string,
           code: f.content as string,
-        }));
+      }));
       setWorkspaceProgramTabs(tabs);
+      if (!planApplied) {
+        setProgramOpenIds([PENDING_PROGRAM_TAB.id]);
+        setProgramTabId(PENDING_PROGRAM_TAB.id);
+        return;
+      }
       if (tabs.length === 0) {
         setProgramOpenIds(DEFAULT_PROGRAM_TAB_IDS);
         setProgramTabId(INITIAL_PROGRAM_TAB);
@@ -267,7 +258,7 @@ export default function App() {
     window.addEventListener("message", onMessage);
     WEBVIEW_VSCODE.postMessage({ type: "promptful/requestFiles" });
     return () => window.removeEventListener("message", onMessage);
-  }, [programTabId]);
+  }, [planApplied, programTabId]);
 
   const reorderProgramTabs = useCallback((next: string[]) => {
     setProgramOpenIds(next);
@@ -319,6 +310,52 @@ export default function App() {
   const runMock = useCallback(() => {
     consumePromptForMock();
   }, [consumePromptForMock]);
+
+  const handleGenerateFeatures = useCallback((request: GeneratedFeatureRequest) => {
+    const featureId = `feat-${request.nodeId}`;
+    setGeneratedFeatureNodeIds((prev) => {
+      if (prev.has(request.nodeId)) return prev;
+      const next = new Set(prev);
+      next.add(request.nodeId);
+      return next;
+    });
+    setLocalByCluster((prev) => {
+      if (prev[request.clusterId].some((item) => item.id === featureId)) return prev;
+      const feature = {
+        id: featureId,
+        label: request.title,
+      };
+      return {
+        ...prev,
+        [request.clusterId]: [feature, ...prev[request.clusterId]],
+      };
+    });
+    setClusterFocus(request.clusterId);
+    setFeaturesOpen(true);
+    setActiveContext({ kind: "local", id: featureId });
+    setAssistantLine(`Generated a local feature from "${request.title}" into the ${CLUSTERS.find((c) => c.id === request.clusterId)?.label ?? "current"} cluster.`);
+  }, []);
+
+  const handleClusterComplete = useCallback((kind: PlanTreeKind) => {
+    setCompletedClusterIds((prev) => {
+      if (prev.has(kind)) return prev;
+      const next = new Set(prev);
+      next.add(kind);
+      return next;
+    });
+  }, []);
+
+  const applyPlan = useCallback(() => {
+    if (completedClusterIds.size < CLUSTERS.length || planApplied) return;
+    setPlanApplied(true);
+    setProgramOpenIds(DEFAULT_PROGRAM_TAB_IDS);
+    setProgramTabId(INITIAL_PROGRAM_TAB);
+    setPlanExplorerTabId(INITIAL_PROGRAM_TAB);
+    setClusterFocus("core");
+    setShowIntro(false);
+    setTab("program");
+    setAssistantLine("Plan applied. Starter files have been generated from the confirmed clusters.");
+  }, [completedClusterIds.size, planApplied]);
 
   const sendFromIntro = useCallback(() => {
     if (!consumePromptForMock()) return;
@@ -581,7 +618,6 @@ export default function App() {
               [
                 ["plan", "Plan"],
                 ["program", "Program"],
-                ["coordinate", "Coordinate"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -597,6 +633,19 @@ export default function App() {
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            className={`pf-apply-plan ${completedClusterCount === clusterTotal && !planApplied ? "pf-apply-plan--ready" : ""}`}
+            disabled={completedClusterCount < clusterTotal || planApplied}
+            onClick={applyPlan}
+            title={planApplied ? "Plan applied" : completedClusterCount === clusterTotal ? "Generate starter files" : "Complete each cluster decision tree"}
+          >
+            {planApplied
+              ? `Plan applied ${clusterTotal}/${clusterTotal}`
+              : completedClusterCount === clusterTotal
+                ? `Apply plan ${completedClusterCount}/${clusterTotal}`
+                : `Confirm clusters ${completedClusterCount}/${clusterTotal}`}
+          </button>
         </div>
         <div className="pf-crumb">{headerCrumb}</div>
       </header>
@@ -670,6 +719,9 @@ export default function App() {
                   showAllClusters={showAllClusters}
                   savedViewport={savedPlanViewport}
                   onViewportSave={handlePlanViewportSave}
+                  onGenerateFeatures={handleGenerateFeatures}
+                  generatedFeatureNodeIds={generatedFeatureNodeIds}
+                  onClusterComplete={handleClusterComplete}
                 />
               </>
             )}
@@ -683,7 +735,6 @@ export default function App() {
                 onCloseTab={closeProgramTab}
               />
             )}
-            {tab === "coordinate" && <CoordinatePane />}
           </main>
 
           <footer className="pf-footer">

@@ -1,6 +1,6 @@
 export type ClusterId = "core" | "account" | "groups" | "budgeting" | "security";
 
-export type WorkspaceTab = "plan" | "program" | "coordinate";
+export type WorkspaceTab = "plan" | "program";
 
 export type PlanCanvasMode = "overview" | "nodegraph";
 
@@ -38,6 +38,13 @@ export interface DecisionOption {
   summary: string;
 }
 
+export interface GeneratedFeatureRequest {
+  nodeId: string;
+  title: string;
+  summary: string;
+  clusterId: ClusterId;
+}
+
 export interface DecisionNodePayload {
   title: string;
   summary: string;
@@ -65,6 +72,10 @@ export interface DecisionNodePayload {
   treeChildrenExpanded?: boolean;
   /** Called with this node's id - toggles descendant visibility */
   onTreeToggleChildren?: (nodeId: string) => void;
+  /** Tree canvas: generated sidebar features from this decision node */
+  featuresGenerated?: boolean;
+  /** Called when the user asks the mock assistant to generate feature chips */
+  onGenerateFeatures?: (nodeId: string) => void;
 }
 
 export interface FileGraphPayload {

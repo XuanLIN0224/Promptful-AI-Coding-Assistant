@@ -55,6 +55,35 @@
   min-width: 0;
 }
 
+.pf-apply-plan {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 13px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.pf-apply-plan--ready {
+  cursor: pointer;
+  color: #fff;
+  border-color: rgba(0, 113, 227, 0.42);
+  background: linear-gradient(180deg, #147ce5 0%, #0071e3 100%);
+  box-shadow: 0 6px 18px rgba(0, 113, 227, 0.22);
+}
+
+.pf-apply-plan:disabled {
+  opacity: 0.78;
+}
+
+.pf-apply-plan--ready:hover {
+  filter: brightness(1.04);
+}
+
 .pf-tab {
   border: 1px solid transparent;
   background: transparent;
@@ -1945,6 +1974,35 @@
   background: rgba(0, 0, 0, 0.05);
 }
 
+.pf-tree-generate {
+  height: 22px;
+  padding: 0 8px;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.pf-tree-generate:hover {
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.pf-tree-generate--done {
+  color: #1d6f3d;
+  border-color: rgba(52, 199, 89, 0.38);
+  background: rgba(52, 199, 89, 0.12);
+}
+
 .pf-node__pill {
   display: inline-flex;
   align-items: center;
@@ -2269,4 +2327,3 @@
   background: rgba(52, 199, 89, 0.14);
   color: #1f7a38;
 }
-

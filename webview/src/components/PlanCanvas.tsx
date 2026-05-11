@@ -46,7 +46,7 @@ import {
   pathNodeIdsFromRootResolved,
   resolvedParentForNode,
 } from "../treePath";
-import type { ClusterFrameData, FileGraphPayload, PlanCanvasMode } from "../types";
+import type { ClusterFrameData, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode } from "../types";
 import { CLUSTERS } from "../types";
 
 const planEdgeTypes = { fileGraphCenter: FileGraphCenterEdge };
@@ -132,6 +132,9 @@ function Inner({
   savedViewport,
   onViewportSave,
   onFlowReady,
+  onGenerateFeatures,
+  generatedFeatureNodeIds,
+  onClusterComplete,
 }: {
   mode: PlanCanvasMode;
   planExplorerTabId: string;
@@ -142,6 +145,9 @@ function Inner({
   savedViewport: Viewport | null;
   onViewportSave: (viewport: Viewport, mode: PlanCanvasMode) => void;
   onFlowReady?: (instance: ReactFlowInstance | null) => void;
+  onGenerateFeatures: (request: GeneratedFeatureRequest) => void;
+  generatedFeatureNodeIds: ReadonlySet<string>;
+  onClusterComplete: (kind: PlanTreeKind) => void;
 }) {
   const isOverview = mode === "overview";
   const isGraph = mode === "nodegraph";
@@ -298,9 +304,9 @@ function Inner({
       return { viewNodes: graphNodes, viewEdges: graphEdges };
     }
 
-    const visibleKind = planTreeKindFromProgramTabId(planExplorerTabId);
-    const hiddenByCollapse = descendantsHiddenByCollapse(edges, collapsedTreeNodeIds);
-    const childrenMap = childrenByParent(edges);
+      const visibleKind = planTreeKindFromProgramTabId(planExplorerTabId);
+      const hiddenByCollapse = descendantsHiddenByCollapse(edges, collapsedTreeNodeIds);
+      const childrenMap = childrenByParent(edges);
     const hiddenIds = new Set<string>();
 
     const overviewNodes = nodes.map((n) => {
@@ -334,6 +340,11 @@ function Inner({
           ? new Set(pathNodeIdsFromRootResolved(treeHoverId, incomingParents, hoverOverride))
           : null;
       const childCount = (childrenMap.get(n.id) ?? []).length;
+      const d = n.data as {
+        title: string;
+        summary: string;
+        clusterId: GeneratedFeatureRequest["clusterId"];
+      };
       return {
         ...n,
         hidden,
@@ -348,6 +359,14 @@ function Inner({
           treeCanToggleChildren: childCount > 0,
           treeChildrenExpanded: !collapsedTreeNodeIds.has(n.id),
           onTreeToggleChildren: handleTreeToggleChildren,
+          featuresGenerated: generatedFeatureNodeIds.has(n.id),
+          onGenerateFeatures: () =>
+            onGenerateFeatures({
+              nodeId: n.id,
+              title: d.title,
+              summary: d.summary,
+              clusterId: d.clusterId,
+            }),
         },
       };
     });
@@ -404,6 +423,8 @@ function Inner({
     hoverParentOverrideForKind,
     handleTreeUndo,
     handleTreeToggleChildren,
+    generatedFeatureNodeIds,
+    onGenerateFeatures,
   ]);
 
   const handleNodesChange = useCallback(
@@ -422,6 +443,7 @@ function Inner({
       if (!isOverview || (node.type !== "decision" && node.type !== "branch")) return;
       const kind = kindFromNodeId(node.id);
       if (!kind) return;
+      const childCount = (childrenByParent(edges).get(node.id) ?? []).length;
 
       const candidates = (incomingParents.get(node.id) ?? []).filter((p) => kindFromNodeId(p) === kind);
       let nextParentChoiceForKind = treeParentChoiceByKind[kind] ?? {};
@@ -453,6 +475,7 @@ function Inner({
         return next;
       });
       onPlanTreeSelectionsChange((prev) => ({ ...prev, [kind]: node.id }));
+      if (childCount === 0) onClusterComplete(kind);
       requestAnimationFrame(() => requestAnimationFrame(() => fitCurrentView(320)));
     },
     [
@@ -461,6 +484,8 @@ function Inner({
       incomingParents,
       isOverview,
       onPlanTreeSelectionsChange,
+      onClusterComplete,
+      edges,
       planTreeSelections,
       treeParentChoiceByKind,
     ]
@@ -564,6 +589,9 @@ export function PlanCanvas({
   savedViewport,
   onViewportSave,
   onFlowReady,
+  onGenerateFeatures,
+  generatedFeatureNodeIds,
+  onClusterComplete,
 }: {
   mode: PlanCanvasMode;
   planExplorerTabId: string;
@@ -574,6 +602,9 @@ export function PlanCanvas({
   savedViewport: Viewport | null;
   onViewportSave: (viewport: Viewport, mode: PlanCanvasMode) => void;
   onFlowReady?: (instance: ReactFlowInstance | null) => void;
+  onGenerateFeatures: (request: GeneratedFeatureRequest) => void;
+  generatedFeatureNodeIds: ReadonlySet<string>;
+  onClusterComplete: (kind: PlanTreeKind) => void;
 }) {
   const stableOnSelection = useCallback((p: OnSelectionChangeParams) => onSelection(p), [onSelection]);
   return (
@@ -590,6 +621,9 @@ export function PlanCanvas({
             savedViewport={savedViewport}
             onViewportSave={onViewportSave}
             onFlowReady={onFlowReady}
+            onGenerateFeatures={onGenerateFeatures}
+            generatedFeatureNodeIds={generatedFeatureNodeIds}
+            onClusterComplete={onClusterComplete}
           />
         </ReactFlowProvider>
       </div>

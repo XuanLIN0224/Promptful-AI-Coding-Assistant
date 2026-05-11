@@ -174,15 +174,19 @@ export function FeatureSidebar({
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEndGlobal}>
               <SortableContext items={globalItems.map((g) => g.id)} strategy={verticalListSortingStrategy}>
                 <div className="pf-side__list">
-                  {globalItems.map((item) => (
-                    <SortableRow
-                      key={item.id}
-                      item={item}
-                      variant="global"
-                      active={activeContext?.kind === "global" && activeContext.id === item.id}
-                      onPick={() => onSelectContext({ kind: "global", id: item.id })}
-                    />
-                  ))}
+                  {globalItems.length === 0 ? (
+                    <div className="pf-source-empty">No global features yet.</div>
+                  ) : (
+                    globalItems.map((item) => (
+                      <SortableRow
+                        key={item.id}
+                        item={item}
+                        variant="global"
+                        active={activeContext?.kind === "global" && activeContext.id === item.id}
+                        onPick={() => onSelectContext({ kind: "global", id: item.id })}
+                      />
+                    ))
+                  )}
                 </div>
               </SortableContext>
             </DndContext>
@@ -208,16 +212,20 @@ export function FeatureSidebar({
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEndLocal}>
               <SortableContext items={localItems.map((g) => g.id)} strategy={verticalListSortingStrategy}>
                 <div className="pf-side__list">
-                  {localItems.map((item) => (
-                    <SortableRow
-                      key={item.id}
-                      item={item}
-                      variant="local"
-                      active={activeContext?.kind === "local" && activeContext.id === item.id}
-                      onPick={() => onSelectContext({ kind: "local", id: item.id })}
-                      localSurface={localSurface}
-                    />
-                  ))}
+                  {localItems.length === 0 ? (
+                    <div className="pf-source-empty">Generate features from a decision node.</div>
+                  ) : (
+                    localItems.map((item) => (
+                      <SortableRow
+                        key={item.id}
+                        item={item}
+                        variant="local"
+                        active={activeContext?.kind === "local" && activeContext.id === item.id}
+                        onPick={() => onSelectContext({ kind: "local", id: item.id })}
+                        localSurface={localSurface}
+                      />
+                    ))
+                  )}
                 </div>
               </SortableContext>
             </DndContext>
