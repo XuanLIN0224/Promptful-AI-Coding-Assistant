@@ -69,22 +69,45 @@ function TreeGenerateButton({
   onGenerate,
 }: {
   generated?: boolean;
-  onGenerate?: () => void;
+  onGenerate?: (target: "global" | "local") => void;
 }) {
   return (
-    <button
-      type="button"
-      className={`pf-tree-generate nodrag ${generated ? "pf-tree-generate--done" : ""}`}
-      aria-label={generated ? "Features generated" : "Generate features"}
-      title={generated ? "Features generated" : "Generate features"}
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        onGenerate?.();
-      }}
-    >
-      <span>{generated ? "Done" : "Generate"}</span>
-    </button>
+    <div className="pf-tree-generate-wrap nodrag">
+      <button
+        type="button"
+        className={`pf-tree-generate ${generated ? "pf-tree-generate--done" : ""}`}
+        aria-label="Add generated feature"
+        title="Add generated feature"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span aria-hidden>+</span>
+      </button>
+      <div className="pf-tree-generate-menu" role="menu" aria-label="Generate feature destination">
+        <button
+          type="button"
+          role="menuitem"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onGenerate?.("local");
+          }}
+        >
+          add to local features
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onGenerate?.("global");
+          }}
+        >
+          add to global features
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -128,7 +151,7 @@ export function DecisionNode({ id, data, selected }: NodeProps<DecisionNodePaylo
       <div className="pf-node__head">
         <span className="pf-node__title">{data.title}</span>
         <div className="pf-node__tools nodrag">
-          <TreeGenerateButton generated={data.featuresGenerated} onGenerate={() => data.onGenerateFeatures?.(id)} />
+          <TreeGenerateButton generated={data.featuresGenerated} onGenerate={(target) => data.onGenerateFeatures?.(id, target)} />
           {data.treeCanToggleChildren ? (
             <TreeExpandButton expanded={data.treeChildrenExpanded !== false} onToggle={() => data.onTreeToggleChildren?.(id)} />
           ) : null}
@@ -184,7 +207,7 @@ export function BranchNode({ id, data, selected }: NodeProps<DecisionNodePayload
           {data.title}
         </span>
         <div className="pf-node__tools nodrag">
-          <TreeGenerateButton generated={data.featuresGenerated} onGenerate={() => data.onGenerateFeatures?.(id)} />
+          <TreeGenerateButton generated={data.featuresGenerated} onGenerate={(target) => data.onGenerateFeatures?.(id, target)} />
           {data.treeCanToggleChildren ? (
             <TreeExpandButton expanded={data.treeChildrenExpanded !== false} onToggle={() => data.onTreeToggleChildren?.(id)} />
           ) : null}

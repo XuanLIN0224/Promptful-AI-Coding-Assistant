@@ -43,6 +43,7 @@ export interface GeneratedFeatureRequest {
   title: string;
   summary: string;
   clusterId: ClusterId;
+  target: "global" | "local";
 }
 
 export interface DecisionNodePayload {
@@ -75,7 +76,7 @@ export interface DecisionNodePayload {
   /** Tree canvas: generated sidebar features from this decision node */
   featuresGenerated?: boolean;
   /** Called when the user asks the mock assistant to generate feature chips */
-  onGenerateFeatures?: (nodeId: string) => void;
+  onGenerateFeatures?: (nodeId: string, target: "global" | "local") => void;
 }
 
 export interface FileGraphPayload {

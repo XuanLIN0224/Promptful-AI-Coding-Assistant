@@ -135,6 +135,7 @@ function Inner({
   onGenerateFeatures,
   generatedFeatureNodeIds,
   onClusterComplete,
+  onTreeUndoNode,
 }: {
   mode: PlanCanvasMode;
   planExplorerTabId: string;
@@ -148,6 +149,7 @@ function Inner({
   onGenerateFeatures: (request: GeneratedFeatureRequest) => void;
   generatedFeatureNodeIds: ReadonlySet<string>;
   onClusterComplete: (kind: PlanTreeKind) => void;
+  onTreeUndoNode: (nodeId: string, kind: PlanTreeKind) => void;
 }) {
   const isOverview = mode === "overview";
   const isGraph = mode === "nodegraph";
@@ -258,6 +260,7 @@ function Inner({
       const kind = kindFromNodeId(fromNodeId);
       if (!kind) return;
       setCollapsedTreeNodeIds((prev) => new Set(prev).add(fromNodeId));
+      onTreeUndoNode(fromNodeId, kind);
       onPlanTreeSelectionsChange((prev) => {
         const cur = prev[kind];
         if (cur !== fromNodeId) return prev;
@@ -266,7 +269,7 @@ function Inner({
         return { ...prev, [kind]: nextVal };
       });
     },
-    [incomingParents, onPlanTreeSelectionsChange, treeParentChoiceByKind]
+    [incomingParents, onPlanTreeSelectionsChange, onTreeUndoNode, treeParentChoiceByKind]
   );
 
   const { viewNodes, viewEdges } = useMemo(() => {
@@ -360,12 +363,13 @@ function Inner({
           treeChildrenExpanded: !collapsedTreeNodeIds.has(n.id),
           onTreeToggleChildren: handleTreeToggleChildren,
           featuresGenerated: generatedFeatureNodeIds.has(n.id),
-          onGenerateFeatures: () =>
+          onGenerateFeatures: (_nodeId: string, target: "global" | "local") =>
             onGenerateFeatures({
               nodeId: n.id,
               title: d.title,
               summary: d.summary,
               clusterId: d.clusterId,
+              target,
             }),
         },
       };
@@ -444,6 +448,7 @@ function Inner({
       const kind = kindFromNodeId(node.id);
       if (!kind) return;
       const childCount = (childrenByParent(edges).get(node.id) ?? []).length;
+      const isTerminal = childCount === 0 || Boolean((node.data as { confirmed?: boolean }).confirmed);
 
       const candidates = (incomingParents.get(node.id) ?? []).filter((p) => kindFromNodeId(p) === kind);
       let nextParentChoiceForKind = treeParentChoiceByKind[kind] ?? {};
@@ -475,7 +480,7 @@ function Inner({
         return next;
       });
       onPlanTreeSelectionsChange((prev) => ({ ...prev, [kind]: node.id }));
-      if (childCount === 0) onClusterComplete(kind);
+      if (isTerminal) onClusterComplete(kind);
       requestAnimationFrame(() => requestAnimationFrame(() => fitCurrentView(320)));
     },
     [
@@ -592,6 +597,7 @@ export function PlanCanvas({
   onGenerateFeatures,
   generatedFeatureNodeIds,
   onClusterComplete,
+  onTreeUndoNode,
 }: {
   mode: PlanCanvasMode;
   planExplorerTabId: string;
@@ -605,6 +611,7 @@ export function PlanCanvas({
   onGenerateFeatures: (request: GeneratedFeatureRequest) => void;
   generatedFeatureNodeIds: ReadonlySet<string>;
   onClusterComplete: (kind: PlanTreeKind) => void;
+  onTreeUndoNode: (nodeId: string, kind: PlanTreeKind) => void;
 }) {
   const stableOnSelection = useCallback((p: OnSelectionChangeParams) => onSelection(p), [onSelection]);
   return (
@@ -624,6 +631,7 @@ export function PlanCanvas({
             onGenerateFeatures={onGenerateFeatures}
             generatedFeatureNodeIds={generatedFeatureNodeIds}
             onClusterComplete={onClusterComplete}
+            onTreeUndoNode={onTreeUndoNode}
           />
         </ReactFlowProvider>
       </div>

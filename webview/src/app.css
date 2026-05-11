@@ -1974,25 +1974,31 @@
   background: rgba(0, 0, 0, 0.05);
 }
 
-.pf-tree-generate {
-  height: 22px;
-  padding: 0 8px;
-  margin: 0;
+.pf-tree-generate-wrap {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 7px;
+}
+
+.pf-tree-generate {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 15px;
   font-weight: 650;
   line-height: 1;
-  white-space: nowrap;
 }
 
-.pf-tree-generate:hover {
+.pf-tree-generate:hover,
+.pf-tree-generate-wrap:hover .pf-tree-generate {
   color: var(--text);
   background: rgba(0, 0, 0, 0.05);
 }
@@ -2001,6 +2007,42 @@
   color: #1d6f3d;
   border-color: rgba(52, 199, 89, 0.38);
   background: rgba(52, 199, 89, 0.12);
+}
+
+.pf-tree-generate-menu {
+  position: absolute;
+  right: 0;
+  top: 26px;
+  display: none;
+  width: 156px;
+  padding: 5px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow-md);
+  z-index: 40;
+}
+
+.pf-tree-generate-wrap:hover .pf-tree-generate-menu,
+.pf-tree-generate-wrap:focus-within .pf-tree-generate-menu {
+  display: grid;
+  gap: 4px;
+}
+
+.pf-tree-generate-menu button {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 550;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.pf-tree-generate-menu button:hover {
+  background: rgba(0, 0, 0, 0.055);
 }
 
 .pf-node__pill {

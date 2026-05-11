@@ -92,6 +92,43 @@ const initialLocal = (): Record<ClusterId, FeatureItem[]> => ({
   security: [],
 });
 
+const GENERATED_FEATURE_LABELS: Record<string, string> = {
+  "co-root": "Cost split calculation model",
+  "co-equal": "Equal share default",
+  "co-custom": "Custom allocation rules",
+  "co-cents": "Exact-cent participant shares",
+  "co-percent": "Percentage split allocation",
+  "co-settle": "Settlement status tracking",
+  "ua-root": "Account access model",
+  "ua-signin": "Mock session sign-in",
+  "ua-subscription": "Subscription tier access",
+  "ua-free": "Free tier limits",
+  "ua-plus": "Plus tier entitlement",
+  "gr-root": "Group workspace model",
+  "gr-household": "Household bill group",
+  "gr-event": "Event expense group",
+  "gr-invite": "Member invitation flow",
+  "gr-balances": "Member balance view",
+  "bu-root": "Monthly budget model",
+  "bu-categories": "Budget categories",
+  "bu-auth-drift": "Misallocated sign-in review",
+  "bu-alerts": "Budget limit alerts",
+  "bu-summary": "Monthly spending summary",
+  "se-root": "Security boundary overview",
+  "se-access": "Financial record access control",
+  "se-audit": "Audit trail policy",
+  "se-budget-summary": "Misplaced budget reporting suggestion",
+  "se-invite-ui": "Misplaced group invite suggestion",
+  "se-encrypt": "Sensitive data encryption",
+};
+
+function generatedFeatureLabel(request: GeneratedFeatureRequest): string {
+  const mapped = GENERATED_FEATURE_LABELS[request.nodeId];
+  if (mapped) return mapped;
+  const cleanedTitle = request.title.replace(/\s*-\s*\d+%/g, "").trim();
+  return cleanedTitle || request.summary.split(".")[0] || "Generated feature";
+}
+
 export default function App() {
   const [showIntro, setShowIntro] = useState(true);
   const [tab, setTab] = useState<WorkspaceTab>("plan");
@@ -312,28 +349,32 @@ export default function App() {
   }, [consumePromptForMock]);
 
   const handleGenerateFeatures = useCallback((request: GeneratedFeatureRequest) => {
-    const featureId = `feat-${request.nodeId}`;
+    const featureId = `feat-${request.target}-${request.nodeId}`;
+    const feature = {
+      id: featureId,
+      label: generatedFeatureLabel(request),
+    };
     setGeneratedFeatureNodeIds((prev) => {
       if (prev.has(request.nodeId)) return prev;
       const next = new Set(prev);
       next.add(request.nodeId);
       return next;
     });
-    setLocalByCluster((prev) => {
-      if (prev[request.clusterId].some((item) => item.id === featureId)) return prev;
-      const feature = {
-        id: featureId,
-        label: request.title,
-      };
-      return {
-        ...prev,
-        [request.clusterId]: [feature, ...prev[request.clusterId]],
-      };
-    });
+    if (request.target === "global") {
+      setGlobalFeatures((prev) => (prev.some((item) => item.id === featureId) ? prev : [feature, ...prev]));
+    } else {
+      setLocalByCluster((prev) => {
+        if (prev[request.clusterId].some((item) => item.id === featureId)) return prev;
+        return {
+          ...prev,
+          [request.clusterId]: [feature, ...prev[request.clusterId]],
+        };
+      });
+    }
     setClusterFocus(request.clusterId);
     setFeaturesOpen(true);
-    setActiveContext({ kind: "local", id: featureId });
-    setAssistantLine(`Generated a local feature from "${request.title}" into the ${CLUSTERS.find((c) => c.id === request.clusterId)?.label ?? "current"} cluster.`);
+    setActiveContext({ kind: request.target, id: featureId });
+    setAssistantLine(`Added "${feature.label}" to ${request.target} features.`);
   }, []);
 
   const handleClusterComplete = useCallback((kind: PlanTreeKind) => {
@@ -341,6 +382,31 @@ export default function App() {
       if (prev.has(kind)) return prev;
       const next = new Set(prev);
       next.add(kind);
+      return next;
+    });
+  }, []);
+
+  const handleTreeUndoNode = useCallback((nodeId: string, kind: PlanTreeKind) => {
+    const localId = `feat-local-${nodeId}`;
+    const globalId = `feat-global-${nodeId}`;
+    setGeneratedFeatureNodeIds((prev) => {
+      if (!prev.has(nodeId)) return prev;
+      const next = new Set(prev);
+      next.delete(nodeId);
+      return next;
+    });
+    setGlobalFeatures((prev) => prev.filter((item) => item.id !== globalId));
+    setLocalByCluster((prev) => ({
+      ...prev,
+      [kind]: prev[kind].filter((item) => item.id !== localId),
+    }));
+    setActiveContext((prev) =>
+      prev && (prev.id === localId || prev.id === globalId) ? null : prev
+    );
+    setCompletedClusterIds((prev) => {
+      if (!prev.has(kind)) return prev;
+      const next = new Set(prev);
+      next.delete(kind);
       return next;
     });
   }, []);
@@ -722,6 +788,7 @@ export default function App() {
                   onGenerateFeatures={handleGenerateFeatures}
                   generatedFeatureNodeIds={generatedFeatureNodeIds}
                   onClusterComplete={handleClusterComplete}
+                  onTreeUndoNode={handleTreeUndoNode}
                 />
               </>
             )}
