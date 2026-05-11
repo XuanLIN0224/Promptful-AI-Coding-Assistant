@@ -1,25 +1,8 @@
-import {
-  closestCenter,
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
-  horizontalListSortingStrategy,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { Fragment, type MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { decisionHudSlotsForProgramTab } from "../mock/flows";
+import type { ProgramEditorTab } from "../programTabs";
 import type { ClusterId } from "../types";
 import { CLUSTERS } from "../types";
-import type { ProgramEditorTab } from "../programTabs";
 
 function hexForCluster(id: ClusterId): string {
   return CLUSTERS.find((c) => c.id === id)?.hex ?? "#86868b";
@@ -34,87 +17,12 @@ function decisionLineIndices(lines: readonly string[]): number[] {
   return out.slice(0, 3);
 }
 
-function SortableEditorTab({
-  id,
-  label,
-  active,
-  closeEnabled,
-  onSelect,
-  onClose,
-}: {
-  id: string;
-  label: string;
-  active: boolean;
-  closeEnabled: boolean;
-  onSelect: () => void;
-  onClose: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 20 : undefined,
-    opacity: isDragging ? 0.9 : undefined,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`pf-program-tab-wrap ${active ? "pf-program-tab-wrap--active" : ""}`}
-      data-active={active || undefined}
-    >
-      <button
-        type="button"
-        role="tab"
-        className={`pf-program-tab-inner ${active ? "pf-program-tab-inner--active" : ""}`}
-        aria-selected={active}
-        onClick={(e: MouseEvent) => {
-          e.stopPropagation();
-          onSelect();
-        }}
-        {...attributes}
-        {...listeners}
-      >
-        <span className="pf-program-tab-label">{label}</span>
-      </button>
-      <button
-        type="button"
-        className={`pf-program-tab-close ${!closeEnabled ? "pf-program-tab-close--blocked" : ""}`}
-        aria-label={`Close ${label}`}
-        title={closeEnabled ? "Close editor" : "Keep at least one tab open"}
-        disabled={!closeEnabled}
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-        }}
-        onClick={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          if (!closeEnabled) return;
-          onClose();
-        }}
-      >
-        ×
-      </button>
-    </div>
-  );
-}
-
 export function ProgramPane({
   catalog,
-  openTabIds,
   activeId,
-  onChangeTab,
-  onReorderTabs,
-  onCloseTab,
 }: {
   catalog: readonly ProgramEditorTab[];
-  openTabIds: string[];
   activeId: string;
-  onChangeTab: (id: string) => void;
-  onReorderTabs: (next: string[]) => void;
-  onCloseTab: (id: string) => void;
 }) {
   const [openLine, setOpenLine] = useState<number | null>(null);
 
@@ -122,42 +30,18 @@ export function ProgramPane({
     setOpenLine(null);
   }, [activeId]);
 
-  const active = useMemo(() => {
-    const direct = catalog.find((t) => t.id === activeId);
-    if (direct) return direct;
-    for (const id of openTabIds) {
-      const f = catalog.find((t) => t.id === id);
-      if (f) return f;
-    }
-    return catalog[0];
-  }, [catalog, activeId, openTabIds]);
+  const active = useMemo(
+    () => catalog.find((t) => t.id === activeId) ?? catalog[0],
+    [catalog, activeId]
+  );
 
   const lines = useMemo(() => active?.code.split("\n") ?? [], [active?.code]);
   const markers = useMemo(() => decisionLineIndices(lines), [lines]);
   const hudSlots = useMemo(() => (active?.id ? decisionHudSlotsForProgramTab(active.id) : []), [active?.id]);
-  const canCloseAny = openTabIds.length > 1;
 
-  const closeHud = useCallback(() => setOpenLine(null), []);
   const toggleHud = useCallback((i: number) => {
     setOpenLine((prev) => (prev === i ? null : i));
   }, []);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
-  const onDragEnd = useCallback(
-    (e: DragEndEvent) => {
-      const { active, over } = e;
-      if (!over || active.id === over.id) return;
-      const oldIndex = openTabIds.indexOf(String(active.id));
-      const newIndex = openTabIds.indexOf(String(over.id));
-      if (oldIndex < 0 || newIndex < 0) return;
-      onReorderTabs(arrayMove(openTabIds, oldIndex, newIndex));
-    },
-    [openTabIds, onReorderTabs]
-  );
 
   if (!active) {
     return (
@@ -171,33 +55,6 @@ export function ProgramPane({
 
   return (
     <div className="pf-program-wrap">
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <SortableContext items={openTabIds} strategy={horizontalListSortingStrategy}>
-          <div className="pf-program-tabs" role="tablist" aria-label="Open editors">
-            {openTabIds.map((tid) => {
-              const meta = catalog.find((t) => t.id === tid);
-              if (!meta) return null;
-              return (
-                <SortableEditorTab
-                  key={tid}
-                  id={tid}
-                  label={meta.label}
-                  active={activeId === tid}
-                  closeEnabled={canCloseAny}
-                  onSelect={() => {
-                    closeHud();
-                    onChangeTab(tid);
-                  }}
-                  onClose={() => {
-                    closeHud();
-                    onCloseTab(tid);
-                  }}
-                />
-              );
-            })}
-          </div>
-        </SortableContext>
-      </DndContext>
       <div className="pf-program-meta">
         <span className="pf-program-meta__path">{active.path}</span>
       </div>
