@@ -17,9 +17,11 @@
   --shadow-md: 0 4px 24px rgba(0, 0, 0, 0.06);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
-  --cluster-security: #5856d6;
   --cluster-core: #ffcc00;
-  --cluster-infra: #34c759;
+  --cluster-account: #0a84ff;
+  --cluster-groups: #34c759;
+  --cluster-budgeting: #ff9500;
+  --cluster-security: #5856d6;
   --global-chip: #1d1d1f;
   --local-chip: #fff3b0;
 }
