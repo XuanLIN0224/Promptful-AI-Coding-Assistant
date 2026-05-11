@@ -15,7 +15,8 @@ import type { PlanTreeKind } from "./mock/flows";
 import { canonicalProgramTabId, clusterForProgramEditorTab, PROGRAM_EDITOR_TABS } from "./programTabs";
 import "./app.css";
 
-const INITIAL_PROGRAM_TAB = PROGRAM_EDITOR_TABS[0]?.id ?? "cal-java";
+const INITIAL_PROGRAM_TAB = PROGRAM_EDITOR_TABS[0]?.id ?? "split-ts";
+const DEFAULT_PROGRAM_TAB_IDS = PROGRAM_EDITOR_TABS.map((tab) => tab.id);
 const ATTACHMENT_ACTIONS = ["link", "upload"] as const;
 const RIGHT_SIDEBAR_MIN = 240;
 const RIGHT_SIDEBAR_MAX = 520;
@@ -69,32 +70,46 @@ function inferUploadKind(file: File): IntroAttachment["kind"] {
 }
 
 const initialGlobal: FeatureItem[] = [
-  { id: "g1", label: "Security conscious" },
-  { id: "g2", label: "Peak load < 500 rps" },
-  { id: "g3", label: "Payment provider boundaries" },
+  { id: "g1", label: "Financial privacy and trust" },
+  { id: "g2", label: "Non-technical client mental model" },
+  { id: "g3", label: "Mock assistant output only" },
+  { id: "g4", label: "Provisional architecture for discussion" },
 ];
 
 function viewportNearlyEqual(a: Viewport | null, b: Viewport): boolean {
   if (!a) return false;
-  const ε = 0.35;
-  return Math.abs(a.x - b.x) < ε && Math.abs(a.y - b.y) < ε && Math.abs(a.zoom - b.zoom) < 0.004;
+  const epsilon = 0.35;
+  return Math.abs(a.x - b.x) < epsilon && Math.abs(a.y - b.y) < epsilon && Math.abs(a.zoom - b.zoom) < 0.004;
 }
 
 const initialLocal = (): Record<ClusterId, FeatureItem[]> => ({
-  security: [
-    { id: "ls1", label: "Rotate refresh tokens" },
-    { id: "ls2", label: "Scope calendar to read-only" },
-    { id: "ls3", label: "Audit OAuth redirects" },
-  ],
   core: [
-    { id: "lc1", label: "Clear definitions" },
-    { id: "lc2", label: "Recurring exceptions" },
-    { id: "lc3", label: "Overlap policy" },
+    { id: "lc1", label: "Submit an expense" },
+    { id: "lc2", label: "Split costs equally or custom" },
+    { id: "lc3", label: "Track settlement status" },
+    { id: "lc4", label: "Recurring shared subscriptions" },
   ],
-  infra: [
-    { id: "li1", label: "Idempotent webhooks" },
-    { id: "li2", label: "Back-pressure on fan-out" },
-    { id: "li3", label: "Structured logs" },
+  account: [
+    { id: "la1", label: "Sign up and sign in" },
+    { id: "la2", label: "User profile and household identity" },
+    { id: "la3", label: "Subscription tier access" },
+  ],
+  groups: [
+    { id: "lg1", label: "Create household or dining group" },
+    { id: "lg2", label: "Invite group members" },
+    { id: "lg3", label: "View member balances" },
+  ],
+  budgeting: [
+    { id: "lb1", label: "Monthly budget categories" },
+    { id: "lb2", label: "Budget alerts" },
+    { id: "lb3", label: "Email/password sign-in" },
+    { id: "lb4", label: "Monthly spending summary" },
+  ],
+  security: [
+    { id: "ls1", label: "Access control for financial records" },
+    { id: "ls2", label: "Audit expense changes" },
+    { id: "ls3", label: "Monthly Budget Summary" },
+    { id: "ls4", label: "Group Invite UI" },
   ],
 });
 
@@ -102,13 +117,9 @@ export default function App() {
   const [showIntro, setShowIntro] = useState(true);
   const [tab, setTab] = useState<WorkspaceTab>("plan");
   const [planMode, setPlanMode] = useState<PlanCanvasMode>("overview");
-  /** Which explorer file scopes highlights / zoom in Plan (tab ids e.g. cal-java, sec-py). */
   const [planExplorerTabId, setPlanExplorerTabId] = useState<string>(INITIAL_PROGRAM_TAB);
-  /** Committed selection per mock tree slice (three clusters on one canvas). */
   const [planTreeSelections, setPlanTreeSelections] = useState<Partial<Record<PlanTreeKind, string | null>>>({});
-  /** When false, only the cluster for the current file is visible (overlapping layout preserved when shown). */
   const [showAllClusters, setShowAllClusters] = useState(true);
-  /** Last pan/zoom per Plan canvas mode when switching Overview ↔ Node graph. */
   const [planViewportOverview, setPlanViewportOverview] = useState<Viewport | null>(null);
   const [planViewportNodegraph, setPlanViewportNodegraph] = useState<Viewport | null>(null);
   const [clusterFocus, setClusterFocus] = useState<ClusterId>("core");
@@ -125,15 +136,17 @@ export default function App() {
   const [assistantLine, setAssistantLine] = useState(() => assistantLineForProgramTab(INITIAL_PROGRAM_TAB));
   const [featuresOpen, setFeaturesOpen] = useState(true);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(320);
-  const [programOpenIds, setProgramOpenIds] = useState<string[]>([]);
-  const [programTabId, setProgramTabId] = useState("");
+  const [programOpenIds, setProgramOpenIds] = useState<string[]>(DEFAULT_PROGRAM_TAB_IDS);
+  const [programTabId, setProgramTabId] = useState(INITIAL_PROGRAM_TAB);
   const [workspaceProgramTabs, setWorkspaceProgramTabs] = useState<Array<{ id: string; label: string; path: string; code: string }>>([]);
 
-  const programCatalog = useMemo(() => workspaceProgramTabs, [workspaceProgramTabs]);
+  const programCatalog = useMemo(
+    () => (workspaceProgramTabs.length > 0 ? workspaceProgramTabs : PROGRAM_EDITOR_TABS),
+    [workspaceProgramTabs]
+  );
 
   const savedPlanViewport = planMode === "overview" ? planViewportOverview : planViewportNodegraph;
 
-  /** Mode comes from the canvas that emitted the event so we never write Overview pan/zoom into the Node graph slot (or vice versa) when switching tabs. */
   const handlePlanViewportSave = useCallback((viewport: Viewport, mode: PlanCanvasMode) => {
     if (mode === "overview") {
       setPlanViewportOverview((prev) => (viewportNearlyEqual(prev, viewport) ? prev : viewport));
@@ -230,8 +243,10 @@ export default function App() {
         }));
       setWorkspaceProgramTabs(tabs);
       if (tabs.length === 0) {
-        setProgramOpenIds([]);
-        setProgramTabId("");
+        setProgramOpenIds(DEFAULT_PROGRAM_TAB_IDS);
+        setProgramTabId(INITIAL_PROGRAM_TAB);
+        setPlanExplorerTabId(INITIAL_PROGRAM_TAB);
+        setClusterFocus("core");
         return;
       }
       setProgramOpenIds((prev) => {
@@ -279,13 +294,12 @@ export default function App() {
     if (activeContext) {
       const list = activeContext.kind === "global" ? globalFeatures : localByCluster[clusterFocus];
       const f = list.find((x) => x.id === activeContext.id);
-      if (f) return `${activeContext.kind === "global" ? "Global" : "Local"} · ${f.label}`;
+      if (f) return `${activeContext.kind === "global" ? "Global" : "Local"} - ${f.label}`;
     }
-    if (scopeLabel) return `Selection · ${scopeLabel}`;
+    if (scopeLabel) return `Selection - ${scopeLabel}`;
     return null;
   }, [activeContext, clusterFocus, globalFeatures, localByCluster, scopeLabel]);
 
-  /** Shared mock submission for dock and intro composer. */
   const consumePromptForMock = useCallback(() => {
     const text = prompt.trim();
     if (!text) return false;
@@ -359,7 +373,6 @@ export default function App() {
           label: file.name,
         })),
       ]);
-      return;
     }
   }, []);
 
@@ -499,7 +512,7 @@ export default function App() {
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div id="pf-source-viewer-title" className="pf-link-modal__title">
-              Source · {sourceViewerAttachment.kind.charAt(0).toUpperCase()}
+              Source - {sourceViewerAttachment.kind.charAt(0).toUpperCase()}
               {sourceViewerAttachment.kind.slice(1)}
             </div>
             {sourceViewerAttachment.kind === "link" ? (
@@ -590,101 +603,101 @@ export default function App() {
 
       <div className="pf-work" style={{ gridTemplateColumns: workGridTemplate }}>
         <div className="pf-center">
-        <main className="pf-main">
-          {tab === "plan" && (
-            <>
-              <div className="pf-toolbar">
-                <div className="pf-toolbar__left">
-                  <div className="pf-seg" role="tablist" aria-label="Canvas mode">
-                    {(
-                      [
-                        ["overview", "Overview"],
-                        ["nodegraph", "Node graph"],
-                      ] as const
-                    ).map(([id, label]) => (
+          <main className="pf-main">
+            {tab === "plan" && (
+              <>
+                <div className="pf-toolbar">
+                  <div className="pf-toolbar__left">
+                    <div className="pf-seg" role="tablist" aria-label="Canvas mode">
+                      {(
+                        [
+                          ["overview", "Overview"],
+                          ["nodegraph", "Node graph"],
+                        ] as const
+                      ).map(([id, label]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          className={`pf-seg__btn ${planMode === id ? "pf-seg__btn--on" : ""}`}
+                          onClick={() => setPlanMode(id)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {planMode === "overview" && (
                       <button
-                        key={id}
                         type="button"
-                        className={`pf-seg__btn ${planMode === id ? "pf-seg__btn--on" : ""}`}
-                        onClick={() => setPlanMode(id)}
+                        className="pf-toolbar__eye"
+                        title={showAllClusters ? "Hide others" : "Show all"}
+                        data-tip={showAllClusters ? "Hide other clusters" : "Show all clusters"}
+                        aria-label={showAllClusters ? "Hide other clusters" : "Show all clusters"}
+                        onClick={() => setShowAllClusters((v) => !v)}
                       >
-                        {label}
+                        {showAllClusters ? (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                        ) : (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <path d="M3 3 21 21" />
+                            <path d="M10.58 10.58A3 3 0 1 0 13.42 13.42" />
+                            <path d="M9.88 5.09A10.94 10.94 0 0 1 12 5c7 0 10 7 10 7a13.05 13.05 0 0 1-2.35 3.88" />
+                            <path d="M6.61 6.61A13.95 13.95 0 0 0 2 12s4 7 10 7a9.74 9.74 0 0 0 4.52-1.22" />
+                          </svg>
+                        )}
                       </button>
-                    ))}
+                    )}
                   </div>
-                  {planMode === "overview" && (
-                    <button
-                      type="button"
-                      className="pf-toolbar__eye"
-                      title={showAllClusters ? "Hide others" : "Show all"}
-                      data-tip={showAllClusters ? "Hide other clusters" : "Show all clusters"}
-                      aria-label={showAllClusters ? "Hide other clusters" : "Show all clusters"}
-                      onClick={() => setShowAllClusters((v) => !v)}
-                    >
-                      {showAllClusters ? (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      ) : (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <path d="M3 3 21 21" />
-                          <path d="M10.58 10.58A3 3 0 1 0 13.42 13.42" />
-                          <path d="M9.88 5.09A10.94 10.94 0 0 1 12 5c7 0 10 7 10 7a13.05 13.05 0 0 1-2.35 3.88" />
-                          <path d="M6.61 6.61A13.95 13.95 0 0 0 2 12s4 7 10 7a9.74 9.74 0 0 0 4.52-1.22" />
-                        </svg>
-                      )}
-                    </button>
-                  )}
-                </div>
-                <div className="pf-toolbar__right">
-                  <div className="pf-legend" aria-label="Cluster legend">
-                    {CLUSTERS.map((c) => (
-                      <span key={c.id} className="pf-legend__item">
-                        <span className="pf-legend__dot" style={{ background: c.color }} />
-                        {c.label}
-                      </span>
-                    ))}
+                  <div className="pf-toolbar__right">
+                    <div className="pf-legend" aria-label="Cluster legend">
+                      {CLUSTERS.map((c) => (
+                        <span key={c.id} className="pf-legend__item">
+                          <span className="pf-legend__dot" style={{ background: c.color }} />
+                          {c.label}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <PlanCanvas
-                mode={planMode}
-                planExplorerTabId={planExplorerTabId}
-                onSelection={onFlowSelection}
-                planTreeSelections={planTreeSelections}
-                onPlanTreeSelectionsChange={setPlanTreeSelections}
-                showAllClusters={showAllClusters}
-                savedViewport={savedPlanViewport}
-                onViewportSave={handlePlanViewportSave}
+                <PlanCanvas
+                  mode={planMode}
+                  planExplorerTabId={planExplorerTabId}
+                  onSelection={onFlowSelection}
+                  planTreeSelections={planTreeSelections}
+                  onPlanTreeSelectionsChange={setPlanTreeSelections}
+                  showAllClusters={showAllClusters}
+                  savedViewport={savedPlanViewport}
+                  onViewportSave={handlePlanViewportSave}
+                />
+              </>
+            )}
+            {tab === "program" && (
+              <ProgramPane
+                catalog={programCatalog}
+                openTabIds={programOpenIds}
+                activeId={programTabId}
+                onChangeTab={handleProgramTabChange}
+                onReorderTabs={reorderProgramTabs}
+                onCloseTab={closeProgramTab}
               />
-            </>
-          )}
-          {tab === "program" && (
-            <ProgramPane
-              catalog={programCatalog}
-              openTabIds={programOpenIds}
-              activeId={programTabId}
-              onChangeTab={handleProgramTabChange}
-              onReorderTabs={reorderProgramTabs}
-              onCloseTab={closeProgramTab}
-            />
-          )}
-          {tab === "coordinate" && <CoordinatePane />}
-        </main>
+            )}
+            {tab === "coordinate" && <CoordinatePane />}
+          </main>
 
-        <footer className="pf-footer">
-          <div className="pf-footer__assist">{assistantLine}</div>
-          <PromptDock
-            clusterId={clusterFocus}
-            value={prompt}
-            onChange={setPrompt}
-            onSubmit={runMock}
-            contextChip={chip}
-            onAddAttachment={addAttachmentMetadata}
-            disabled={showIntro}
-          />
-        </footer>
+          <footer className="pf-footer">
+            <div className="pf-footer__assist">{assistantLine}</div>
+            <PromptDock
+              clusterId={clusterFocus}
+              value={prompt}
+              onChange={setPrompt}
+              onSubmit={runMock}
+              contextChip={chip}
+              onAddAttachment={addAttachmentMetadata}
+              disabled={showIntro}
+            />
+          </footer>
         </div>
 
         <div
