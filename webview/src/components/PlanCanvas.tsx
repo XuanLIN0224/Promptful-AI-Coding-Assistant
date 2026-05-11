@@ -67,6 +67,14 @@ function parentIdsFromEdges(edges: readonly Edge[]): Set<string> {
   return parents;
 }
 
+function initiallyCollapsedParentIds(allParents: ReadonlySet<string>): Set<string> {
+  const collapsed = new Set(allParents);
+  for (const rootId of PLAN_CLUSTER_TREE_ROOT_IDS) {
+    collapsed.delete(rootId);
+  }
+  return collapsed;
+}
+
 function childrenByParent(edges: readonly Edge[]): Map<string, string[]> {
   const children = new Map<string, string[]>();
   for (const e of edges) {
@@ -149,7 +157,9 @@ function Inner({
   );
   const [focusId, setFocusId] = useState<string | null>(null);
   const [treeHoverId, setTreeHoverId] = useState<string | null>(null);
-  const [collapsedTreeNodeIds, setCollapsedTreeNodeIds] = useState<Set<string>>(() => new Set(allTreeParents));
+  const [collapsedTreeNodeIds, setCollapsedTreeNodeIds] = useState<Set<string>>(() =>
+    initiallyCollapsedParentIds(allTreeParents)
+  );
   const [treeParentChoiceByKind, setTreeParentChoiceByKind] = useState<Partial<Record<PlanTreeKind, Record<string, string>>>>({});
   const [graphDragging, setGraphDragging] = useState(false);
   const flowInstanceRef = useRef<ReactFlowInstance | null>(null);
@@ -179,7 +189,7 @@ function Inner({
     if (isOverview) {
       setNodes(layoutClusterFramesForOverview(overviewPack.nodes));
       setEdges(overviewPack.edges);
-      setCollapsedTreeNodeIds(new Set(allTreeParents));
+      setCollapsedTreeNodeIds(initiallyCollapsedParentIds(allTreeParents));
       setTreeParentChoiceByKind({});
       setTreeHoverId(null);
     } else {
@@ -413,17 +423,12 @@ function Inner({
       const kind = kindFromNodeId(node.id);
       if (!kind) return;
 
-      setCollapsedTreeNodeIds((prev) => {
-        const next = new Set(prev);
-        next.delete(node.id);
-        return next;
-      });
-
       const candidates = (incomingParents.get(node.id) ?? []).filter((p) => kindFromNodeId(p) === kind);
+      let nextParentChoiceForKind = treeParentChoiceByKind[kind] ?? {};
       if (candidates.length > 1) {
         let chosen = candidates[0];
         const currentLeaf = planTreeSelections[kind] ?? null;
-        const parentOverride = treeParentChoiceByKind[kind];
+        const parentOverride = nextParentChoiceForKind;
         if (currentLeaf && candidates.includes(currentLeaf)) {
           chosen = currentLeaf;
         } else if (currentLeaf) {
@@ -431,16 +436,28 @@ function Inner({
           const ancestor = candidates.find((p) => currentPath.has(p));
           if (ancestor) chosen = ancestor;
         }
+        nextParentChoiceForKind = { ...nextParentChoiceForKind, [node.id]: chosen };
         setTreeParentChoiceByKind((prev) => ({
           ...prev,
-          [kind]: { ...(prev[kind] ?? {}), [node.id]: chosen },
+          [kind]: nextParentChoiceForKind,
         }));
       }
+      const selectedPath = new Set(pathNodeIdsFromRootResolved(node.id, incomingParents, nextParentChoiceForKind));
+      setCollapsedTreeNodeIds(() => {
+        const next = initiallyCollapsedParentIds(allTreeParents);
+        for (const parentId of allTreeParents) {
+          if (kindFromNodeId(parentId) !== kind) continue;
+          if (selectedPath.has(parentId)) next.delete(parentId);
+          else next.add(parentId);
+        }
+        return next;
+      });
       onPlanTreeSelectionsChange((prev) => ({ ...prev, [kind]: node.id }));
       requestAnimationFrame(() => requestAnimationFrame(() => fitCurrentView(320)));
     },
     [
       fitCurrentView,
+      allTreeParents,
       incomingParents,
       isOverview,
       onPlanTreeSelectionsChange,
