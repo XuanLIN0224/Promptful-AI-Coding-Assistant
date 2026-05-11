@@ -17,13 +17,16 @@ function decisionLineIndices(lines: readonly string[]): number[] {
   return out.slice(0, 3);
 }
 
-export function ProgramPane({
-  catalog,
-  activeId,
-}: {
+type ProgramPaneProps = {
   catalog: readonly ProgramEditorTab[];
   activeId: string;
-}) {
+  openTabIds?: string[];
+  onChangeTab?: (id: string) => void;
+  onReorderTabs?: (next: string[]) => void;
+  onCloseTab?: (id: string) => void;
+};
+
+export function ProgramPane({ catalog, activeId }: ProgramPaneProps) {
   const [openLine, setOpenLine] = useState<number | null>(null);
 
   useEffect(() => {
