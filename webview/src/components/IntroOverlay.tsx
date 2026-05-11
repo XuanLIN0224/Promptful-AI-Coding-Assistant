@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { WorkspaceTab } from "../types";
 
-/** Placeholder names only — not wired to any real model or API. */
-const MOCK_MODELS = ["Auto", "ChatGPT Instant", "ChatGPT Thinking", "Cursor Auto", "Claud"] as const;
+/** Placeholder names only - this mock never calls a real model or API. */
+const MOCK_MODELS = ["Promptful Mock", "Structure Assistant", "Decision Mapper", "Context Reviewer"] as const;
 
 export type IntroAttachment = {
   id: string;
@@ -56,7 +56,7 @@ export function IntroOverlay({
               className="pf-intro__model-select"
               value={modelId}
               onChange={(e) => setModelId(e.target.value)}
-              aria-label="Select model"
+              aria-label="Select assistant mode"
               aria-describedby="pf-intro-model-desc"
             >
               {MOCK_MODELS.map((name) => (
@@ -102,7 +102,7 @@ export function IntroOverlay({
                       aria-label={`Remove ${a.kind} metadata`}
                       onClick={() => onRemoveAttachment(a.id)}
                     >
-                      ×
+                      x
                     </button>
                   </span>
                 ))}
@@ -146,7 +146,7 @@ export function IntroOverlay({
               </div>
               <input
                 className="pf-intro__input"
-                placeholder="Let's build something…"
+                placeholder="Let's build something..."
                 aria-label="Describe what you want to build"
                 type="text"
                 autoComplete="off"
