@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { OnSelectionChangeParams, Viewport } from "@xyflow/react";
 import type { ClusterId, DecisionNodePayload, FeatureItem, FileGraphPayload, PlanCanvasMode, WorkspaceTab } from "./types";
 import { CLUSTERS } from "./types";
-import { CoordinatePane } from "./components/CoordinatePane";
 import { FeatureSidebar } from "./components/FeatureSidebar";
 import { IntroOverlay } from "./components/IntroOverlay";
 import type { IntroAttachment } from "./components/IntroOverlay";
@@ -175,22 +174,19 @@ export default function App() {
     setScopeLabel(n.id);
   }, []);
 
+  /** Subtitle under Plan / Program: Files (Program), cluster or Overview (Plan overview), or Node graph. */
   const headerCrumb = useMemo(() => {
-    switch (tab) {
-      case "program": {
-        const p = programCatalog.find((t) => t.id === programTabId);
-        return p?.label ?? programCatalog[0]?.label ?? "Open a file in VS Code";
-      }
-      case "coordinate":
-        return "Workspace session";
-      case "plan": {
-        const p = programCatalog.find((t) => t.id === planExplorerTabId);
-        return p?.label ?? "Plan";
-      }
-      default:
-        return programCatalog[0]?.label ?? "Plan";
+    if (tab === "program") {
+      const p = programCatalog.find((t) => t.id === programTabId);
+      return p?.label ?? programCatalog[0]?.label ?? "Files";
     }
-  }, [tab, programTabId, planExplorerTabId, programCatalog]);
+    if (tab === "plan") {
+      if (planMode === "nodegraph") return "Node graph";
+      const cl = CLUSTERS.find((c) => c.id === clusterFocus);
+      return cl?.label ?? "Overview";
+    }
+    return "Plan";
+  }, [tab, planMode, clusterFocus, programTabId, programCatalog]);
 
   const syncContextToProgramTab = useCallback((programTabId: string) => {
     const t = programCatalog.find((x) => x.id === programTabId);
@@ -367,6 +363,34 @@ export default function App() {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
+  const renameGlobalFeature = useCallback((id: string, label: string) => {
+    const t = label.trim();
+    if (!t) return;
+    setGlobalFeatures((prev) => prev.map((x) => (x.id === id ? { ...x, label: t } : x)));
+  }, []);
+
+  const removeGlobalFeature = useCallback((id: string) => {
+    setGlobalFeatures((prev) => prev.filter((x) => x.id !== id));
+    setActiveContext((ctx) => (ctx?.kind === "global" && ctx.id === id ? null : ctx));
+  }, []);
+
+  const renameLocalFeature = useCallback((cluster: ClusterId, id: string, label: string) => {
+    const t = label.trim();
+    if (!t) return;
+    setLocalByCluster((prev) => ({
+      ...prev,
+      [cluster]: prev[cluster].map((x) => (x.id === id ? { ...x, label: t } : x)),
+    }));
+  }, []);
+
+  const removeLocalFeature = useCallback((cluster: ClusterId, id: string) => {
+    setLocalByCluster((prev) => ({
+      ...prev,
+      [cluster]: prev[cluster].filter((x) => x.id !== id),
+    }));
+    setActiveContext((ctx) => (ctx?.kind === "local" && ctx.id === id ? null : ctx));
+  }, []);
+
   const removeSourceFromPanel = useCallback(
     (id: string) => {
       removeAttachmentMetadata(id);
@@ -438,6 +462,23 @@ export default function App() {
     const rightHandle = featuresOpen ? "6px" : "0px";
     return `minmax(0, 1fr) ${rightHandle} ${rightCol}`;
   }, [featuresOpen, rightSidebarWidth]);
+
+  const navigateToCluster = useCallback(
+    (cluster: ClusterId) => {
+      const preferredTab =
+        workspaceProgramTabs.find((t) => clusterForProgramEditorTab(t.id) === cluster)?.id ??
+        PROGRAM_EDITOR_TABS.find((t) => clusterForProgramEditorTab(t.id) === cluster)?.id ??
+        planExplorerTabId;
+      setShowIntro(false);
+      setTab("plan");
+      setPlanMode("overview");
+      setClusterFocus(cluster);
+      setPlanExplorerTabId(preferredTab);
+      // "Eye closed": keep only the chosen cluster visible; PlanCanvas auto-fits that cluster.
+      setShowAllClusters(false);
+    },
+    [workspaceProgramTabs, planExplorerTabId]
+  );
 
   return (
     <div className="pf-shell">
@@ -568,7 +609,6 @@ export default function App() {
               [
                 ["plan", "Plan"],
                 ["program", "Program"],
-                ["coordinate", "Coordinate"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -612,52 +652,43 @@ export default function App() {
                       </button>
                     ))}
                   </div>
-                  {planMode === "overview" && (
-                    <button
-                      type="button"
-                      className="pf-toolbar__eye"
-                      title={showAllClusters ? "Hide others" : "Show all"}
-                      data-tip={showAllClusters ? "Hide other clusters" : "Show all clusters"}
-                      aria-label={showAllClusters ? "Hide other clusters" : "Show all clusters"}
-                      onClick={() => setShowAllClusters((v) => !v)}
-                    >
-                      {showAllClusters ? (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      ) : (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <path d="M3 3 21 21" />
-                          <path d="M10.58 10.58A3 3 0 1 0 13.42 13.42" />
-                          <path d="M9.88 5.09A10.94 10.94 0 0 1 12 5c7 0 10 7 10 7a13.05 13.05 0 0 1-2.35 3.88" />
-                          <path d="M6.61 6.61A13.95 13.95 0 0 0 2 12s4 7 10 7a9.74 9.74 0 0 0 4.52-1.22" />
-                        </svg>
-                      )}
-                    </button>
-                  )}
                 </div>
                 <div className="pf-toolbar__right">
-                  <div className="pf-legend" aria-label="Cluster legend">
-                    {CLUSTERS.map((c) => (
-                      <span key={c.id} className="pf-legend__item">
-                        <span className="pf-legend__dot" style={{ background: c.color }} />
-                        {c.label}
-                      </span>
-                    ))}
-                  </div>
+                  <button
+                    type="button"
+                    className="pf-toolbar__apply"
+                    aria-label="Apply plan"
+                    onClick={() => {
+                      // TODO: wire real apply plan action
+                    }}
+                  >
+                    Apply plan
+                  </button>
                 </div>
               </div>
-              <PlanCanvas
-                mode={planMode}
-                planExplorerTabId={planExplorerTabId}
-                onSelection={onFlowSelection}
-                planTreeSelections={planTreeSelections}
-                onPlanTreeSelectionsChange={setPlanTreeSelections}
-                showAllClusters={showAllClusters}
-                savedViewport={savedPlanViewport}
-                onViewportSave={handlePlanViewportSave}
-              />
+              <div className="pf-plan-canvas-wrap">
+                <div className="pf-canvas-legend" aria-label="Cluster legend">
+                  {CLUSTERS.map((c) => (
+                    <span key={c.id} className="pf-legend__item">
+                      <span className="pf-legend__dot" style={{ background: c.color }} />
+                      {c.label}
+                    </span>
+                  ))}
+                </div>
+                <PlanCanvas
+                  mode={planMode}
+                  planExplorerTabId={planExplorerTabId}
+                  planClusterFocus={clusterFocus}
+                  onSelection={onFlowSelection}
+                  planTreeSelections={planTreeSelections}
+                  onPlanTreeSelectionsChange={setPlanTreeSelections}
+                  onClusterFocusChange={setClusterFocus}
+                  showAllClusters={showAllClusters}
+                  onToggleShowAllClusters={() => setShowAllClusters((v) => !v)}
+                  savedViewport={savedPlanViewport}
+                  onViewportSave={handlePlanViewportSave}
+                />
+              </div>
             </>
           )}
           {tab === "program" && (
@@ -670,7 +701,6 @@ export default function App() {
               onCloseTab={closeProgramTab}
             />
           )}
-          {tab === "coordinate" && <CoordinatePane />}
         </main>
 
         <footer className="pf-footer">
@@ -704,12 +734,28 @@ export default function App() {
           globalItems={globalFeatures}
           localByCluster={localByCluster}
           sources={sourceItems}
+          programFiles={workspaceProgramTabs.map((t) => ({ id: t.id, label: t.label, path: t.path }))}
+          onPickProgramFile={(id) => {
+            setShowIntro(false);
+            setTab("program");
+            handleProgramTabChange(id);
+          }}
+          onNavigateLocalFeature={(cluster, featureId) => {
+            setClusterFocus(cluster);
+            setActiveContext({ kind: "local", id: featureId });
+          }}
+          onNavigateCluster={navigateToCluster}
+          composerPrompt={prompt}
           onReorderGlobal={setGlobalFeatures}
           onReorderLocal={(cluster, items) => setLocalByCluster((p) => ({ ...p, [cluster]: items }))}
           activeContext={activeContext}
           onSelectContext={setActiveContext}
           onOpenSource={setSourceViewerId}
           onRemoveSource={removeSourceFromPanel}
+          onRenameGlobal={renameGlobalFeature}
+          onRemoveGlobal={removeGlobalFeature}
+          onRenameLocal={renameLocalFeature}
+          onRemoveLocal={removeLocalFeature}
           collapsed={!featuresOpen}
           onToggleCollapsed={() => setFeaturesOpen((o) => !o)}
         />

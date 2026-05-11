@@ -1,6 +1,6 @@
 export type ClusterId = "security" | "core" | "infra";
 
-export type WorkspaceTab = "plan" | "program" | "coordinate";
+export type WorkspaceTab = "plan" | "program";
 
 export type PlanCanvasMode = "overview" | "nodegraph";
 

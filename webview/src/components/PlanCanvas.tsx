@@ -13,6 +13,7 @@ import {
   applyNodeChanges,
   Background,
   BackgroundVariant,
+  ControlButton,
   Controls,
   MiniMap,
   ReactFlow,
@@ -41,7 +42,6 @@ import {
   nodesArgForClusterFit,
   planKindFromClusterFrameId,
   PLAN_CLUSTER_TREE_ROOT_IDS,
-  planTreeKindFromProgramTabId,
   type PlanTreeKind,
 } from "../mock/flows";
 import { FileGraphCenterEdge } from "../flow/fileGraphEdge";
@@ -78,7 +78,8 @@ function snapshotPlanNodes(nodes: Node[]): Node[] {
 function applyClusterVisibility(
   mode: PlanCanvasMode,
   showAllClusters: boolean,
-  planExplorerTabId: string,
+  /** Which cluster stays visible when “show all” is off — must match sidebar `clusterFocus`. */
+  planClusterFocus: ClusterId,
   nodes: Node[],
   edges: Edge[]
 ): { nodes: Node[]; edges: Edge[] } {
@@ -94,7 +95,7 @@ function applyClusterVisibility(
       edges: edges.map((e) => ({ ...e, hidden: false })),
     };
   }
-  const fk = planTreeKindFromProgramTabId(planExplorerTabId);
+  const fk = planClusterFocus as PlanTreeKind;
   const n2 = nodes.map((n) => {
     let hide = true;
     if (n.type === "clusterFrame") {
@@ -117,11 +118,11 @@ function applyClusterVisibility(
 /** When “hide others” is on, refit so the visible cluster is centered; when showing all, zoom out. */
 function RefitOnEyeToggle({
   showAllClusters,
-  planExplorerTabId,
+  planClusterFocus,
   active,
 }: {
   showAllClusters: boolean;
-  planExplorerTabId: string;
+  planClusterFocus: ClusterId;
   active: boolean;
 }) {
   const { fitView, getNodes } = useReactFlow();
@@ -140,7 +141,7 @@ function RefitOnEyeToggle({
         void fitView({ padding: 0.12, duration: 380, maxZoom: 1.15 });
         return;
       }
-      const kind = planTreeKindFromProgramTabId(planExplorerTabId);
+      const kind = planClusterFocus as PlanTreeKind;
       const measured = nodesArgForClusterFit(kind, getNodes());
       const fallback = { id: `cluster-overview-${kind}` };
       void fitView({
@@ -151,32 +152,41 @@ function RefitOnEyeToggle({
       });
     };
     requestAnimationFrame(() => requestAnimationFrame(run));
-  }, [showAllClusters, planExplorerTabId, active, fitView, getNodes]);
+  }, [showAllClusters, planClusterFocus, active, fitView, getNodes]);
   return null;
 }
 
 /**
- * When the Plan explorer file changes, zoom Overview to that file’s cluster.
+ * When the Plan explorer file or focused cluster changes, zoom Overview to that cluster.
  * Skips the first run after mount so mode switches / viewport restore are not overwritten
  * (`handleFlowInit` or `defaultViewport` owns the first frame).
  */
-function FitOverviewOnExplorerTabChange({ planExplorerTabId, active }: { planExplorerTabId: string; active: boolean }) {
+function FitOverviewOnExplorerTabChange({
+  planExplorerTabId,
+  planClusterFocus,
+  active,
+}: {
+  planExplorerTabId: string;
+  planClusterFocus: ClusterId;
+  active: boolean;
+}) {
   const { fitView, getNodes } = useReactFlow();
-  const prevTabRef = useRef<string | null>(null);
+  const prevScopeRef = useRef<string | null>(null);
   useEffect(() => {
+    const scopeKey = `${planExplorerTabId}|${planClusterFocus}`;
     if (!active) {
-      prevTabRef.current = planExplorerTabId;
+      prevScopeRef.current = scopeKey;
       return;
     }
-    if (prevTabRef.current === null) {
-      prevTabRef.current = planExplorerTabId;
+    if (prevScopeRef.current === null) {
+      prevScopeRef.current = scopeKey;
       return;
     }
-    if (prevTabRef.current === planExplorerTabId) return;
-    prevTabRef.current = planExplorerTabId;
+    if (prevScopeRef.current === scopeKey) return;
+    prevScopeRef.current = scopeKey;
 
     const run = () => {
-      const kind = planTreeKindFromProgramTabId(planExplorerTabId);
+      const kind = planClusterFocus as PlanTreeKind;
       const measured = nodesArgForClusterFit(kind, getNodes());
       const fallback = { id: `cluster-overview-${kind}` };
       void fitView({
@@ -187,27 +197,33 @@ function FitOverviewOnExplorerTabChange({ planExplorerTabId, active }: { planExp
       });
     };
     requestAnimationFrame(() => requestAnimationFrame(run));
-  }, [planExplorerTabId, active, fitView, getNodes]);
+  }, [planExplorerTabId, planClusterFocus, active, fitView, getNodes]);
   return null;
 }
 
 function Inner({
   mode,
   planExplorerTabId,
+  planClusterFocus,
   onSelection,
   planTreeSelections,
   onPlanTreeSelectionsChange,
+  onClusterFocusChange,
   showAllClusters,
+  onToggleShowAllClusters,
   savedViewport,
   onViewportSave,
   onFlowReady,
 }: {
   mode: PlanCanvasMode;
   planExplorerTabId: string;
+  planClusterFocus: ClusterId;
   onSelection: (p: OnSelectionChangeParams) => void;
   planTreeSelections: Partial<Record<PlanTreeKind, string | null>>;
   onPlanTreeSelectionsChange: Dispatch<SetStateAction<Partial<Record<PlanTreeKind, string | null>>>>;
+  onClusterFocusChange: (cluster: ClusterId) => void;
   showAllClusters: boolean;
+  onToggleShowAllClusters: () => void;
   savedViewport: Viewport | null;
   /** Include `mode` so parent stores into the correct slot when switching Overview ↔ Node graph (avoids stale planMode). */
   onViewportSave: (viewport: Viewport, mode: PlanCanvasMode) => void;
@@ -216,6 +232,8 @@ function Inner({
   const isOverview = mode === "overview";
   const isGraph = mode === "nodegraph";
   const [vpZoom, setVpZoom] = useState(1);
+  /** In show-all mode, skip fit-on-click after the user dragged a cluster frame. */
+  const clusterFrameDraggedRef = useRef(false);
 
   const overviewPackStable = useMemo(() => clusterOverviewPack(), []);
   const nodegraphPack = useMemo(() => {
@@ -298,7 +316,6 @@ function Inner({
       if (inst) {
         const vp = savedViewportRef.current;
         const nextMode = mode;
-        const explorerTab = planExplorerTabId;
         requestAnimationFrame(() => {
           const i = flowInstanceRef.current;
           if (!i) {
@@ -312,7 +329,7 @@ function Inner({
               releasePublish();
             });
           } else if (nextMode === "overview") {
-            const kind = planTreeKindFromProgramTabId(explorerTab);
+            const kind = planClusterFocus as PlanTreeKind;
             const measured = nodesArgForClusterFit(kind, i.getNodes());
             const fallback = { id: `cluster-overview-${kind}` };
             void i
@@ -362,7 +379,7 @@ function Inner({
         });
       }
     }
-  }, [mode, planExplorerTabId, overviewPackStable, nodegraphPack, setNodes, setEdges, onViewportSave]);
+  }, [mode, planExplorerTabId, planClusterFocus, overviewPackStable, nodegraphPack, setNodes, setEdges, onViewportSave]);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [treeHoverId, setTreeHoverId] = useState<string | null>(null);
   const [collapsedTreeNodeIds, setCollapsedTreeNodeIds] = useState<Set<string>>(() => new Set());
@@ -396,8 +413,8 @@ function Inner({
   );
 
   const { nodes: viewNodes, edges: viewEdges } = useMemo(
-    () => applyClusterVisibility(mode, showAllClusters, planExplorerTabId, nodes, edges),
-    [mode, showAllClusters, planExplorerTabId, nodes, edges]
+    () => applyClusterVisibility(mode, showAllClusters, planClusterFocus, nodes, edges),
+    [mode, showAllClusters, planClusterFocus, nodes, edges]
   );
 
   const adjacency = useMemo(() => (isGraph ? buildAdjacency(edges) : new Map()), [isGraph, edges]);
@@ -429,7 +446,7 @@ function Inner({
       }
       allowViewportPublishRef.current = true;
       if (isOverview) {
-        const kind = planTreeKindFromProgramTabId(planExplorerTabId);
+        const kind = planClusterFocus as PlanTreeKind;
         const fit = () => {
           const measured = nodesArgForClusterFit(kind, instance.getNodes());
           const fallback = { id: `cluster-overview-${kind}` };
@@ -449,7 +466,7 @@ function Inner({
         });
       });
     },
-    [fitViewOptions, isOverview, planExplorerTabId, onFlowReady]
+    [fitViewOptions, isOverview, planClusterFocus, onFlowReady]
   );
 
   useEffect(() => {
@@ -884,6 +901,7 @@ function Inner({
           return;
         }
         if (isOverview && node.type === "clusterFrame" && showAllClusters) {
+          clusterFrameDraggedRef.current = false;
           const k = planKindFromClusterFrameId(node.id);
           if (k) setClusterDragKind(k);
           clusterDragLastRef.current = { id: node.id, x: node.position.x, y: node.position.y };
@@ -904,6 +922,7 @@ function Inner({
         const dy = node.position.y - prev.y;
         clusterDragLastRef.current = { id: node.id, x: node.position.x, y: node.position.y };
         if (dx === 0 && dy === 0) return;
+        clusterFrameDraggedRef.current = true;
         const kind = planKindFromClusterFrameId(node.id);
         if (!kind) return;
         setNodes((nds) =>
@@ -930,10 +949,35 @@ function Inner({
         clusterDragLastRef.current = null;
       }}
       onNodeClick={(_, node) => {
-        if (node.type !== "decision" && node.type !== "branch") return;
         if (!isOverview) return;
+        if (node.type === "clusterFrame") {
+          const k = planKindFromClusterFrameId(node.id);
+          if (k) {
+            onClusterFocusChange(k);
+            if (showAllClusters && !clusterFrameDraggedRef.current) {
+              const measured = nodesArgForClusterFit(k, flowInstanceRef.current?.getNodes() ?? []);
+              const fallback = { id: `cluster-overview-${k}` };
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                  const inst = flowInstanceRef.current;
+                  if (!inst) return;
+                  void inst.fitView({
+                    padding: 0.2,
+                    duration: 400,
+                    maxZoom: 1.35,
+                    nodes: measured.length > 0 ? measured : [fallback],
+                  });
+                })
+              );
+            }
+          }
+          clusterFrameDraggedRef.current = false;
+          return;
+        }
+        if (node.type !== "decision" && node.type !== "branch") return;
         const kind = kindFromNodeId(node.id);
         if (!kind) return;
+        onClusterFocusChange(kind);
         const candidates = (incomingParents.get(node.id) ?? []).filter((p) => kindFromNodeId(p) === kind);
         if (candidates.length > 1) {
           let chosen = candidates[0];
@@ -979,10 +1023,34 @@ function Inner({
             }
       }
     >
-      <RefitOnEyeToggle showAllClusters={showAllClusters} planExplorerTabId={planExplorerTabId} active={isOverview} />
-      <FitOverviewOnExplorerTabChange planExplorerTabId={planExplorerTabId} active={isOverview} />
+      <RefitOnEyeToggle showAllClusters={showAllClusters} planClusterFocus={planClusterFocus} active={isOverview} />
+      <FitOverviewOnExplorerTabChange planExplorerTabId={planExplorerTabId} planClusterFocus={planClusterFocus} active={isOverview} />
       <Background gap={18} size={1} color="rgba(0,0,0,0.06)" variant={BackgroundVariant.Dots} />
-      <Controls showInteractive={false} />
+      <Controls showInteractive={false} className={isOverview ? "pf-controls-with-overview-eye" : undefined}>
+        {isOverview && (
+          <ControlButton
+            className="pf-flow-controls-eye"
+            onClick={onToggleShowAllClusters}
+            title={showAllClusters ? "Hide others" : "Show all"}
+            data-tip={showAllClusters ? "Hide other clusters" : "Show all clusters"}
+            aria-label={showAllClusters ? "Hide other clusters" : "Show all clusters"}
+          >
+            {showAllClusters ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M3 3 21 21" />
+                <path d="M10.58 10.58A3 3 0 1 0 13.42 13.42" />
+                <path d="M9.88 5.09A10.94 10.94 0 0 1 12 5c7 0 10 7 10 7a13.05 13.05 0 0 1-2.35 3.88" />
+                <path d="M6.61 6.61A13.95 13.95 0 0 0 2 12s4 7 10 7a9.74 9.74 0 0 0 4.52-1.22" />
+              </svg>
+            )}
+          </ControlButton>
+        )}
+      </Controls>
       <MiniMap
         pannable
         zoomable
@@ -997,20 +1065,26 @@ function Inner({
 export function PlanCanvas({
   mode,
   planExplorerTabId,
+  planClusterFocus,
   onSelection,
   planTreeSelections,
   onPlanTreeSelectionsChange,
+  onClusterFocusChange,
   showAllClusters,
+  onToggleShowAllClusters,
   savedViewport,
   onViewportSave,
   onFlowReady,
 }: {
   mode: PlanCanvasMode;
   planExplorerTabId: string;
+  planClusterFocus: ClusterId;
   onSelection: (p: OnSelectionChangeParams) => void;
   planTreeSelections: Partial<Record<PlanTreeKind, string | null>>;
   onPlanTreeSelectionsChange: Dispatch<SetStateAction<Partial<Record<PlanTreeKind, string | null>>>>;
+  onClusterFocusChange: (cluster: ClusterId) => void;
   showAllClusters: boolean;
+  onToggleShowAllClusters: () => void;
   savedViewport: Viewport | null;
   onViewportSave: (viewport: Viewport, mode: PlanCanvasMode) => void;
   onFlowReady?: (instance: ReactFlowInstance | null) => void;
@@ -1023,10 +1097,13 @@ export function PlanCanvas({
           <Inner
             mode={mode}
             planExplorerTabId={planExplorerTabId}
+            planClusterFocus={planClusterFocus}
             onSelection={stableOnSelection}
             planTreeSelections={planTreeSelections}
             onPlanTreeSelectionsChange={onPlanTreeSelectionsChange}
+            onClusterFocusChange={onClusterFocusChange}
             showAllClusters={showAllClusters}
+            onToggleShowAllClusters={onToggleShowAllClusters}
             savedViewport={savedViewport}
             onViewportSave={onViewportSave}
             onFlowReady={onFlowReady}
