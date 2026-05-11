@@ -1,4 +1,4 @@
-export type ClusterId = "security" | "core" | "infra";
+export type ClusterId = "core" | "account" | "groups" | "budgeting" | "security";
 
 export type WorkspaceTab = "plan" | "program" | "coordinate";
 
@@ -8,14 +8,16 @@ export interface ClusterMeta {
   id: ClusterId;
   label: string;
   color: string;
-  /** Solid color for inline shadows / charts */
+  /** Solid colour for inline shadows / charts */
   hex: string;
 }
 
 export const CLUSTERS: ClusterMeta[] = [
-  { id: "security", label: "Security", color: "var(--cluster-security)", hex: "#5856d6" },
   { id: "core", label: "Core", color: "var(--cluster-core)", hex: "#ffcc00" },
-  { id: "infra", label: "Infra", color: "var(--cluster-infra)", hex: "#34c759" },
+  { id: "account", label: "User Account & Access", color: "var(--cluster-account)", hex: "#0a84ff" },
+  { id: "groups", label: "Groups", color: "var(--cluster-groups)", hex: "#34c759" },
+  { id: "budgeting", label: "Budgeting", color: "var(--cluster-budgeting)", hex: "#ff9500" },
+  { id: "security", label: "Security", color: "var(--cluster-security)", hex: "#5856d6" },
 ];
 
 export interface FeatureItem {
@@ -44,10 +46,10 @@ export interface DecisionNodePayload {
   planSourceTabId?: string;
   sources: DecisionSource[];
   options?: DecisionOption[];
-  /** Branch: `options` are represented as explicit child branch nodes — hide inline % tiles here. */
+  /** Branch: `options` are represented as explicit child branch nodes - hide inline % tiles here. */
   optionsAsSeparateBranches?: boolean;
   confirmed?: boolean;
-  /** Tree canvas: committed click selection — stationary yellow border */
+  /** Tree canvas: committed click selection - stationary yellow border */
   treeCommitted?: boolean;
   /** Tree canvas: on hover-preview path (dashed edges), not yet committed */
   treeHoverPath?: boolean;
@@ -55,13 +57,13 @@ export interface DecisionNodePayload {
   treePathHover?: boolean;
   /** Tree canvas: show revert beside sources only on the clicked node */
   treeShowUndo?: boolean;
-  /** Called with this node's id — rolls selection back one step toward root */
+  /** Called with this node's id - rolls selection back one step toward root */
   onTreeUndo?: (nodeId: string) => void;
   /** Tree canvas: node has children that can be collapsed/expanded */
   treeCanToggleChildren?: boolean;
   /** Tree canvas: subtree visibility state for children */
   treeChildrenExpanded?: boolean;
-  /** Called with this node's id — toggles descendant visibility */
+  /** Called with this node's id - toggles descendant visibility */
   onTreeToggleChildren?: (nodeId: string) => void;
 }
 
@@ -77,9 +79,9 @@ export interface ClusterFrameData {
   clusterId: ClusterId;
   /** Decision tree: cluster wash behind all nodes; pointer-events none */
   treeBackdrop?: boolean;
-  /** 0–1; stronger when zoomed in or when Calendar (root) is focused */
+  /** 0-1; stronger when zoomed in or when a root node is focused */
   treeTint?: number;
-  /** Cluster canvas tab: same hue, light mat; frames do not clip nodes (see flows — no extent) */
+  /** Cluster canvas tab: same hue, light mat; frames do not clip nodes (see flows - no extent) */
   clusterMat?: boolean;
 }
 
