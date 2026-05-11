@@ -130,9 +130,9 @@ function generatedFeatureLabel(request: GeneratedFeatureRequest): string {
 }
 
 const TERMINAL_NODE_IDS_BY_KIND: Record<PlanTreeKind, ReadonlySet<string>> = {
-  core: new Set(["co-settle"]),
+  core: new Set(["co-equal", "co-cents", "co-percent", "co-settle"]),
   account: new Set(["ua-signin", "ua-free", "ua-plus"]),
-  groups: new Set(["gr-balances"]),
+  groups: new Set(["gr-household", "gr-invite", "gr-balances"]),
   budgeting: new Set(["bu-alerts", "bu-summary"]),
   security: new Set(["se-access", "se-budget-summary", "se-invite-ui", "se-encrypt"]),
 };
@@ -210,18 +210,21 @@ export default function App() {
           const completedNext = new Set(completedPrev);
           let changed = false;
 
-          if (next.core === "co-settle" && !completedNext.has("core")) {
+          const coreComplete = next.core ? TERMINAL_NODE_IDS_BY_KIND.core.has(next.core) : false;
+          const groupsComplete = next.groups ? TERMINAL_NODE_IDS_BY_KIND.groups.has(next.groups) : false;
+
+          if (coreComplete && !completedNext.has("core")) {
             completedNext.add("core");
             changed = true;
-          } else if (next.core !== "co-settle" && completedNext.has("core")) {
+          } else if (!coreComplete && completedNext.has("core")) {
             completedNext.delete("core");
             changed = true;
           }
 
-          if (next.groups === "gr-balances" && !completedNext.has("groups")) {
+          if (groupsComplete && !completedNext.has("groups")) {
             completedNext.add("groups");
             changed = true;
-          } else if (next.groups !== "gr-balances" && completedNext.has("groups")) {
+          } else if (!groupsComplete && completedNext.has("groups")) {
             completedNext.delete("groups");
             changed = true;
           }

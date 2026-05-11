@@ -507,8 +507,8 @@ function Inner({
       });
       onPlanTreeSelectionsChange((prev) => ({ ...prev, [kind]: node.id }));
       if (isTerminal) onClusterComplete(kind);
-      if (node.id === "co-settle") onClusterComplete("core");
-      if (node.id === "gr-balances") onClusterComplete("groups");
+      if (["co-equal", "co-cents", "co-percent", "co-settle"].includes(node.id)) onClusterComplete("core");
+      if (["gr-household", "gr-invite", "gr-balances"].includes(node.id)) onClusterComplete("groups");
       requestAnimationFrame(() => requestAnimationFrame(() => fitCurrentView(320)));
     },
     [
