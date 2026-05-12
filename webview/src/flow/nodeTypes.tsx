@@ -292,6 +292,20 @@ function Pie({ share }: { share: FileGraphPayload["clusterShare"] }) {
         ly: cy + (radius + labelPad) * Math.sin(mid - Math.PI / 2),
       };
     }
+    if (frac >= 0.999) {
+      return (
+        <circle
+          key={c.id}
+          cx={cx}
+          cy={cy}
+          r={radius}
+          fill={c.hex}
+          opacity={0.92}
+          className="pf-pie__slice"
+          onMouseEnter={() => setHovered(c.id)}
+        />
+      );
+    }
     const x0 = cx + radius * Math.cos(a0 - Math.PI / 2);
     const y0 = cy + radius * Math.sin(a0 - Math.PI / 2);
     const x1 = cx + radius * Math.cos(a1 - Math.PI / 2);
