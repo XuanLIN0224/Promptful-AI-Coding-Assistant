@@ -246,6 +246,19 @@ function Inner({
 
   const incomingParents = useMemo(() => buildIncomingParentsMap(edges), [edges]);
 
+  useEffect(() => {
+    if (!isOverview) return;
+    setCollapsedTreeNodeIds(() => {
+      const next = initiallyCollapsedParentIds(allTreeParents);
+      for (const [kind, nodeId] of Object.entries(planTreeSelections) as [PlanTreeKind, string | null | undefined][]) {
+        if (!nodeId || kindFromNodeId(nodeId) !== kind) continue;
+        const path = pathNodeIdsFromRootResolved(nodeId, incomingParents, treeParentChoiceByKind[kind]);
+        for (const id of path) next.delete(id);
+      }
+      return next;
+    });
+  }, [allTreeParents, incomingParents, isOverview, planTreeSelections, treeParentChoiceByKind]);
+
   const hoverParentOverrideForKind = useCallback(
     (kind: PlanTreeKind, hoverNodeId: string): Readonly<Record<string, string>> | undefined => {
       const base = treeParentChoiceByKind[kind] ?? {};

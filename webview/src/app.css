@@ -1650,6 +1650,19 @@
   box-shadow: var(--shadow-md);
 }
 
+.pf-program__hud--link {
+  cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.pf-program__hud--link:hover,
+.pf-program__hud--link:focus-visible {
+  border-color: rgba(0, 113, 227, 0.32);
+  box-shadow: 0 10px 28px rgba(0, 113, 227, 0.14), var(--shadow-md);
+  outline: none;
+  transform: translateY(-1px);
+}
+
 .pf-program__hud-title {
   font-size: 11px;
   font-weight: 600;

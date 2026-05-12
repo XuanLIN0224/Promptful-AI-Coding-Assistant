@@ -24,9 +24,10 @@ type ProgramPaneProps = {
   onChangeTab?: (id: string) => void;
   onReorderTabs?: (next: string[]) => void;
   onCloseTab?: (id: string) => void;
+  onOpenDecisionNode?: (clusterId: ClusterId, nodeId: string) => void;
 };
 
-export function ProgramPane({ catalog, activeId }: ProgramPaneProps) {
+export function ProgramPane({ catalog, activeId, onOpenDecisionNode }: ProgramPaneProps) {
   const [openLine, setOpenLine] = useState<number | null>(null);
 
   useEffect(() => {
@@ -114,7 +115,19 @@ export function ProgramPane({ catalog, activeId }: ProgramPaneProps) {
                 {hudSlot && hudHex && (
                   <div className="pf-program__sheet-hud">
                     <div className="pf-program__ln pf-program__ln--hud-gap" aria-hidden />
-                    <div className="pf-program__hud">
+                    <div
+                      className={`pf-program__hud ${onOpenDecisionNode ? "pf-program__hud--link" : ""}`}
+                      role={onOpenDecisionNode ? "button" : undefined}
+                      tabIndex={onOpenDecisionNode ? 0 : undefined}
+                      title={onOpenDecisionNode ? "Open this decision in Plan" : undefined}
+                      onClick={() => onOpenDecisionNode?.(hudSlot.clusterId, hudSlot.nodeId)}
+                      onKeyDown={(e) => {
+                        if (!onOpenDecisionNode) return;
+                        if (e.key !== "Enter" && e.key !== " ") return;
+                        e.preventDefault();
+                        onOpenDecisionNode(hudSlot.clusterId, hudSlot.nodeId);
+                      }}
+                    >
                       <div className="pf-program__hud-title">
                         Tree · <span style={{ color: hudHex }}>{hudSlot.title}</span>
                       </div>

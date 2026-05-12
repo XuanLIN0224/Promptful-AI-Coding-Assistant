@@ -18,6 +18,13 @@ const INITIAL_PROGRAM_TAB = PROGRAM_EDITOR_TABS[0]?.id ?? "split-ts";
 const ATTACHMENT_ACTIONS = ["link", "upload"] as const;
 const RIGHT_SIDEBAR_MIN = 240;
 const RIGHT_SIDEBAR_MAX = 520;
+const PROGRAM_TAB_BY_CLUSTER: Record<ClusterId, string> = {
+  core: "split-ts",
+  account: "auth-ts",
+  groups: "groups-ts",
+  budgeting: "budgeting-ts",
+  security: "security-ts",
+};
 const WEBVIEW_VSCODE = (() => {
   const g = globalThis as unknown as { acquireVsCodeApi?: () => { postMessage: (msg: unknown) => void } };
   return typeof g.acquireVsCodeApi === "function" ? g.acquireVsCodeApi() : null;
@@ -664,15 +671,19 @@ export default function App() {
   const navigateCluster = useCallback((cluster: ClusterId) => {
     setClusterFocus(cluster);
     setShowAllClusters(false);
-    const tabForCluster: Record<ClusterId, string> = {
-      core: "split-ts",
-      account: "auth-ts",
-      groups: "groups-ts",
-      budgeting: "budgeting-ts",
-      security: "security-ts",
-    };
-    setPlanExplorerTabId(tabForCluster[cluster]);
+    setPlanExplorerTabId(PROGRAM_TAB_BY_CLUSTER[cluster]);
     setTab("plan");
+  }, []);
+
+  const navigateProgramDecision = useCallback((cluster: ClusterId, nodeId: string) => {
+    setShowIntro(false);
+    setTab("plan");
+    setPlanMode("overview");
+    setClusterFocus(cluster);
+    setShowAllClusters(false);
+    setPlanExplorerTabId(PROGRAM_TAB_BY_CLUSTER[cluster]);
+    setPlanTreeSelections((prev) => ({ ...prev, [cluster]: nodeId }));
+    setAssistantLine(`Showing the linked ${CLUSTERS.find((c) => c.id === cluster)?.label ?? "cluster"} decision in Plan.`);
   }, []);
 
   const startSidebarResize = useCallback(
@@ -949,6 +960,7 @@ export default function App() {
                 onChangeTab={handleProgramTabChange}
                 onReorderTabs={reorderProgramTabs}
                 onCloseTab={closeProgramTab}
+                onOpenDecisionNode={navigateProgramDecision}
               />
             )}
           </main>
