@@ -13,6 +13,17 @@ const clusterName: Record<ClusterId, string> = {
   budgeting: "Budgeting",
   security: "Security",
   compliance: "Compliance",
+  compliance2: "Compliance 2",
+  compliance3: "Compliance 3",
+  compliance4: "Compliance 4",
+  compliance5: "Compliance 5",
+  compliance6: "Compliance 6",
+  compliance7: "Compliance 7",
+  compliance8: "Compliance 8",
+  compliance9: "Compliance 9",
+  compliance10: "Compliance 10",
+  compliance11: "Compliance 11",
+  compliance12: "Compliance 12",
 };
 
 export function mimicAi(prompt: string, cluster: ClusterId): MimicResult {

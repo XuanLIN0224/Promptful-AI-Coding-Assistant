@@ -193,6 +193,7 @@ function Inner({
     initiallyCollapsedParentIds(allTreeParents)
   );
   const [nodeTextEdits, setNodeTextEdits] = useState<Record<string, { title: string; summary: string }>>({});
+  const [editDraft, setEditDraft] = useState<null | { nodeId: string; title: string; summary: string }>(null);
   const [treeParentChoiceByKind, setTreeParentChoiceByKind] = useState<Partial<Record<PlanTreeKind, Record<string, string>>>>({});
   const [graphDragging, setGraphDragging] = useState(false);
   const flowInstanceRef = useRef<ReactFlowInstance | null>(null);
@@ -298,20 +299,22 @@ function Inner({
       if (!node || (node.type !== "decision" && node.type !== "branch")) return;
       const data = node.data as DecisionNodePayload;
       const current = nodeTextEdits[nodeId] ?? { title: data.title, summary: data.summary };
-      const title = window.prompt("Edit node title", current.title);
-      if (title === null) return;
-      const summary = window.prompt("Edit node summary", current.summary);
-      if (summary === null) return;
-      setNodeTextEdits((prev) => ({
-        ...prev,
-        [nodeId]: {
-          title: title.trim() || current.title,
-          summary: summary.trim() || current.summary,
-        },
-      }));
+      setEditDraft({ nodeId, title: current.title, summary: current.summary });
     },
     [nodeTextEdits, nodes]
   );
+
+  const applyEditDraft = useCallback(() => {
+    if (!editDraft) return;
+    setNodeTextEdits((prev) => ({
+      ...prev,
+      [editDraft.nodeId]: {
+        title: editDraft.title.trim() || "Untitled decision",
+        summary: editDraft.summary.trim() || "Describe this decision.",
+      },
+    }));
+    setEditDraft(null);
+  }, [editDraft]);
 
   const handleTreeUndo = useCallback(
     (fromNodeId: string) => {
@@ -595,90 +598,125 @@ function Inner({
   );
 
   return (
-    <ReactFlow
-      nodes={viewNodes}
-      edges={viewEdges}
-      onNodesChange={handleNodesChange}
-      onEdgesChange={onEdgesChange}
-      nodeTypes={planNodeTypes}
-      edgeTypes={planEdgeTypes}
-      style={{ width: "100%", height: "100%" }}
-      fitView={false}
-      defaultViewport={savedViewport ?? undefined}
-      onSelectionChange={onSelection}
-      onInit={(instance) => {
-        flowInstanceRef.current = instance;
-        onFlowReady?.(instance);
-        requestAnimationFrame(() => requestAnimationFrame(() => fitCurrentView(0)));
-      }}
-      onMoveEnd={(_, viewport) => {
-        if (viewportSaveRaf.current != null) cancelAnimationFrame(viewportSaveRaf.current);
-        viewportSaveRaf.current = requestAnimationFrame(() => {
-          viewportSaveRaf.current = null;
-          onViewportSave(viewport, mode);
-        });
-      }}
-      minZoom={0.08}
-      maxZoom={2}
-      nodesDraggable
-      nodesConnectable={false}
-      elementsSelectable
-      elevateNodesOnSelect
-      proOptions={{ hideAttribution: true }}
-      onNodeMouseEnter={(_, node) => {
-        if (isOverview) {
-          if (treeLeaveTimerRef.current) {
-            clearTimeout(treeLeaveTimerRef.current);
-            treeLeaveTimerRef.current = null;
+    <>
+      <ReactFlow
+        nodes={viewNodes}
+        edges={viewEdges}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={planNodeTypes}
+        edgeTypes={planEdgeTypes}
+        style={{ width: "100%", height: "100%" }}
+        fitView={false}
+        defaultViewport={savedViewport ?? undefined}
+        onSelectionChange={onSelection}
+        onInit={(instance) => {
+          flowInstanceRef.current = instance;
+          onFlowReady?.(instance);
+          requestAnimationFrame(() => requestAnimationFrame(() => fitCurrentView(0)));
+        }}
+        onMoveEnd={(_, viewport) => {
+          if (viewportSaveRaf.current != null) cancelAnimationFrame(viewportSaveRaf.current);
+          viewportSaveRaf.current = requestAnimationFrame(() => {
+            viewportSaveRaf.current = null;
+            onViewportSave(viewport, mode);
+          });
+        }}
+        minZoom={0.08}
+        maxZoom={2}
+        nodesDraggable
+        nodesConnectable={false}
+        elementsSelectable
+        elevateNodesOnSelect
+        proOptions={{ hideAttribution: true }}
+        onNodeMouseEnter={(_, node) => {
+          if (isOverview) {
+            if (treeLeaveTimerRef.current) {
+              clearTimeout(treeLeaveTimerRef.current);
+              treeLeaveTimerRef.current = null;
+            }
+            if (node.type === "decision" || node.type === "branch") setTreeHoverId(node.id);
+            return;
           }
-          if (node.type === "decision" || node.type === "branch") setTreeHoverId(node.id);
-          return;
+          if (!isGraph || graphDragging) return;
+          setFocusId(node.id);
+        }}
+        onNodeMouseLeave={() => {
+          if (isOverview) {
+            treeLeaveTimerRef.current = setTimeout(() => {
+              setTreeHoverId(null);
+              treeLeaveTimerRef.current = null;
+            }, 56);
+            return;
+          }
+          if (!isGraph || graphDragging) return;
+          setFocusId(null);
+        }}
+        onNodeDragStart={(_, node) => {
+          if (!isGraph) return;
+          setGraphDragging(true);
+          setFocusId(node.id);
+        }}
+        onNodeDragStop={() => {
+          if (!isGraph) return;
+          setGraphDragging(false);
+        }}
+        onNodeDrag={(_evt: MouseEvent, _node: Node) => undefined}
+        onNodeClick={(_, node) => handleTreeClick(node)}
+        onPaneMouseDown={() => {
+          if (isOverview) setTreeHoverId(null);
+          else if (!graphDragging) setFocusId(null);
+        }}
+        defaultEdgeOptions={
+          isGraph
+            ? { type: "fileGraphCenter", style: { stroke: "rgba(29,29,31,0.18)", strokeWidth: 1.2 } }
+            : { type: "smoothstep", style: { stroke: "rgba(0,0,0,0.18)", strokeWidth: 1.5 } }
         }
-        if (!isGraph || graphDragging) return;
-        setFocusId(node.id);
-      }}
-      onNodeMouseLeave={() => {
-        if (isOverview) {
-          treeLeaveTimerRef.current = setTimeout(() => {
-            setTreeHoverId(null);
-            treeLeaveTimerRef.current = null;
-          }, 56);
-          return;
-        }
-        if (!isGraph || graphDragging) return;
-        setFocusId(null);
-      }}
-      onNodeDragStart={(_, node) => {
-        if (!isGraph) return;
-        setGraphDragging(true);
-        setFocusId(node.id);
-      }}
-      onNodeDragStop={() => {
-        if (!isGraph) return;
-        setGraphDragging(false);
-      }}
-      onNodeDrag={(_evt: MouseEvent, _node: Node) => undefined}
-      onNodeClick={(_, node) => handleTreeClick(node)}
-      onPaneMouseDown={() => {
-        if (isOverview) setTreeHoverId(null);
-        else if (!graphDragging) setFocusId(null);
-      }}
-      defaultEdgeOptions={
-        isGraph
-          ? { type: "fileGraphCenter", style: { stroke: "rgba(29,29,31,0.18)", strokeWidth: 1.2 } }
-          : { type: "smoothstep", style: { stroke: "rgba(0,0,0,0.18)", strokeWidth: 1.5 } }
-      }
-    >
-      <Background gap={18} size={1} color="rgba(0,0,0,0.06)" variant={BackgroundVariant.Dots} />
-      <Controls showInteractive={false} />
-      <MiniMap
-        pannable
-        zoomable
-        maskColor="rgba(255,255,255,0.82)"
-        nodeStrokeWidth={2}
-        nodeColor={() => "rgba(0,0,0,0.12)"}
-      />
-    </ReactFlow>
+      >
+        <Background gap={18} size={1} color="rgba(0,0,0,0.06)" variant={BackgroundVariant.Dots} />
+        <Controls showInteractive={false} />
+        <MiniMap
+          pannable
+          zoomable
+          maskColor="rgba(255,255,255,0.82)"
+          nodeStrokeWidth={2}
+          nodeColor={() => "rgba(0,0,0,0.12)"}
+        />
+      </ReactFlow>
+      {editDraft && (
+        <div className="pf-tree-edit-modal-backdrop" role="presentation" onMouseDown={() => setEditDraft(null)}>
+          <div
+            className="pf-tree-edit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pf-tree-edit-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div id="pf-tree-edit-title" className="pf-tree-edit-modal__title">Edit decision node</div>
+            <label className="pf-tree-edit-modal__field">
+              <span>Title</span>
+              <input
+                value={editDraft.title}
+                onChange={(event) => setEditDraft((prev) => (prev ? { ...prev, title: event.target.value } : prev))}
+                autoFocus
+              />
+            </label>
+            <label className="pf-tree-edit-modal__field">
+              <span>Summary</span>
+              <textarea
+                value={editDraft.summary}
+                onChange={(event) => setEditDraft((prev) => (prev ? { ...prev, summary: event.target.value } : prev))}
+                rows={4}
+              />
+            </label>
+            <div className="pf-tree-edit-modal__actions">
+              <button type="button" className="pf-tree-edit-modal__ghost" onClick={() => setEditDraft(null)}>Cancel</button>
+              <button type="button" className="pf-tree-edit-modal__confirm" onClick={applyEditDraft}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

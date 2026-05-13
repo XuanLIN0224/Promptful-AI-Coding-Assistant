@@ -18,7 +18,22 @@ const INITIAL_PROGRAM_TAB = PROGRAM_EDITOR_TABS[0]?.id ?? "split-ts";
 const ATTACHMENT_ACTIONS = ["link", "upload"] as const;
 const RIGHT_SIDEBAR_MIN = 240;
 const RIGHT_SIDEBAR_MAX = 520;
-const PROGRAM_TAB_BY_CLUSTER: Record<ClusterId, string> = {
+const GENERATED_CLUSTER_IDS: ClusterId[] = [
+  "compliance",
+  "compliance2",
+  "compliance3",
+  "compliance4",
+  "compliance5",
+  "compliance6",
+  "compliance7",
+  "compliance8",
+  "compliance9",
+  "compliance10",
+  "compliance11",
+  "compliance12",
+];
+
+const PROGRAM_TAB_BY_CLUSTER: Partial<Record<ClusterId, string>> = {
   core: "split-ts",
   account: "auth-ts",
   groups: "groups-ts",
@@ -26,6 +41,9 @@ const PROGRAM_TAB_BY_CLUSTER: Record<ClusterId, string> = {
   security: "security-ts",
   compliance: "security-ts",
 };
+function programTabForCluster(cluster: ClusterId): string {
+  return PROGRAM_TAB_BY_CLUSTER[cluster] ?? "security-ts";
+}
 const WEBVIEW_VSCODE = (() => {
   const g = globalThis as unknown as { acquireVsCodeApi?: () => { postMessage: (msg: unknown) => void } };
   return typeof g.acquireVsCodeApi === "function" ? g.acquireVsCodeApi() : null;
@@ -83,14 +101,8 @@ function viewportNearlyEqual(a: Viewport | null, b: Viewport): boolean {
   return Math.abs(a.x - b.x) < epsilon && Math.abs(a.y - b.y) < epsilon && Math.abs(a.zoom - b.zoom) < 0.004;
 }
 
-const initialLocal = (): Record<ClusterId, FeatureItem[]> => ({
-  core: [],
-  account: [],
-  groups: [],
-  budgeting: [],
-  security: [],
-  compliance: [],
-});
+const initialLocal = (): Record<ClusterId, FeatureItem[]> =>
+  Object.fromEntries(CLUSTERS.map((cluster) => [cluster.id, []])) as Record<ClusterId, FeatureItem[]>;
 
 const GENERATED_FEATURE_LABELS: Record<string, string> = {
   "co-root": "Cost split calculation model",
@@ -133,7 +145,7 @@ function generatedFeatureLabel(request: GeneratedFeatureRequest): string {
   return cleanedTitle || request.summary.split(".")[0] || "Generated feature";
 }
 
-const TERMINAL_NODE_IDS_BY_KIND: Record<PlanTreeKind, ReadonlySet<string>> = {
+const BASE_TERMINAL_NODE_IDS_BY_KIND: Partial<Record<PlanTreeKind, ReadonlySet<string>>> = {
   core: new Set(["co-equal", "co-cents", "co-percent", "co-settle"]),
   account: new Set(["ua-signin", "ua-free", "ua-plus", "ua-family"]),
   groups: new Set(["gr-household", "gr-invite", "gr-balances"]),
@@ -141,6 +153,12 @@ const TERMINAL_NODE_IDS_BY_KIND: Record<PlanTreeKind, ReadonlySet<string>> = {
   security: new Set(["se-access", "se-budget-summary", "se-invite-ui", "se-encrypt"]),
   compliance: new Set(["cm-retention", "cm-export", "cm-consent"]),
 };
+
+function terminalNodeIdsForKind(kind: PlanTreeKind): ReadonlySet<string> {
+  const base = BASE_TERMINAL_NODE_IDS_BY_KIND[kind];
+  if (base) return base;
+  return new Set([`${kind}-retention`, `${kind}-export`, `${kind}-consent`]);
+}
 
 function featureIdsForNode(nodeId: string): string[] {
   return [`feat-local-${nodeId}`, `feat-global-${nodeId}`];
@@ -160,7 +178,7 @@ export default function App() {
   const [localByCluster, setLocalByCluster] = useState(initialLocal);
   const [completedClusterIds, setCompletedClusterIds] = useState<Set<PlanTreeKind>>(() => new Set());
   const [generatedFeatureNodeIds, setGeneratedFeatureNodeIds] = useState<Set<string>>(() => new Set());
-  const [complianceClusterAdded, setComplianceClusterAdded] = useState(false);
+  const [generatedClusterIds, setGeneratedClusterIds] = useState<ClusterId[]>([]);
   const [planApplied, setPlanApplied] = useState(false);
   const [activeContext, setActiveContext] = useState<{ kind: "global" | "local"; id: string } | null>(null);
   const [scopeLabel, setScopeLabel] = useState<string | null>("Terminus");
@@ -179,8 +197,8 @@ export default function App() {
 
   const programCatalog = useMemo(() => workspaceProgramTabs, [workspaceProgramTabs]);
   const visibleClusters = useMemo(
-    () => CLUSTERS.filter((cluster) => complianceClusterAdded || cluster.id !== "compliance"),
-    [complianceClusterAdded]
+    () => CLUSTERS.filter((cluster) => !GENERATED_CLUSTER_IDS.includes(cluster.id) || generatedClusterIds.includes(cluster.id)),
+    [generatedClusterIds]
   );
   const visibleClusterIds = useMemo(() => visibleClusters.map((cluster) => cluster.id), [visibleClusters]);
 
@@ -191,10 +209,9 @@ export default function App() {
     setCompletedClusterIds((prev) => {
       const next = new Set(prev);
       let changed = false;
-      (Object.keys(TERMINAL_NODE_IDS_BY_KIND) as PlanTreeKind[]).forEach((kind) => {
-        if (!visibleClusterIds.includes(kind)) return;
+      visibleClusterIds.forEach((kind) => {
         const selection = planTreeSelections[kind] ?? null;
-        const complete = selection ? TERMINAL_NODE_IDS_BY_KIND[kind].has(selection) : false;
+        const complete = selection ? terminalNodeIdsForKind(kind).has(selection) : false;
         if (complete && !next.has(kind)) {
           next.add(kind);
           changed = true;
@@ -685,7 +702,7 @@ export default function App() {
   const navigateCluster = useCallback((cluster: ClusterId) => {
     setClusterFocus(cluster);
     setShowAllClusters(false);
-    setPlanExplorerTabId(PROGRAM_TAB_BY_CLUSTER[cluster]);
+    setPlanExplorerTabId(programTabForCluster(cluster));
     setTab("plan");
   }, []);
 
@@ -695,21 +712,26 @@ export default function App() {
     setPlanMode("overview");
     setClusterFocus(cluster);
     setShowAllClusters(false);
-    setPlanExplorerTabId(PROGRAM_TAB_BY_CLUSTER[cluster]);
+    setPlanExplorerTabId(programTabForCluster(cluster));
     setPlanTreeSelections((prev) => ({ ...prev, [cluster]: nodeId }));
     setAssistantLine(`Showing the linked ${CLUSTERS.find((c) => c.id === cluster)?.label ?? "cluster"} decision in Plan.`);
   }, []);
 
   const addGeneratedCluster = useCallback(() => {
-    setComplianceClusterAdded(true);
+    const nextCluster = GENERATED_CLUSTER_IDS.find((id) => !generatedClusterIds.includes(id));
+    if (!nextCluster) {
+      setAssistantLine("Mock AI has generated the available compliance clusters for this study build.");
+      return;
+    }
+    setGeneratedClusterIds((prev) => [...prev, nextCluster]);
     setShowIntro(false);
     setTab("plan");
     setPlanMode("overview");
-    setClusterFocus("compliance");
+    setClusterFocus(nextCluster);
     setShowAllClusters(false);
-    setPlanExplorerTabId(PROGRAM_TAB_BY_CLUSTER.compliance);
-    setAssistantLine("Mock AI generated a Compliance cluster with editable decision nodes.");
-  }, []);
+    setPlanExplorerTabId(programTabForCluster(nextCluster));
+    setAssistantLine(`Mock AI generated ${CLUSTERS.find((cluster) => cluster.id === nextCluster)?.label ?? "a new cluster"} with editable decision nodes.`);
+  }, [generatedClusterIds]);
 
   const startSidebarResize = useCallback(
     (startX: number) => {
@@ -1027,7 +1049,7 @@ export default function App() {
           onPickProgramFile={pickProgramFileFromSidebar}
           onNavigateLocalFeature={navigateLocalFeature}
           onNavigateCluster={navigateCluster}
-          onAddCluster={complianceClusterAdded ? undefined : addGeneratedCluster}
+          onAddCluster={addGeneratedCluster}
           composerPrompt={prompt}
           onReorderGlobal={setGlobalFeatures}
           onReorderLocal={(cluster, items) => setLocalByCluster((p) => ({ ...p, [cluster]: items }))}

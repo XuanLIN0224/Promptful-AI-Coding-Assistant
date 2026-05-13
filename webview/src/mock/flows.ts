@@ -7,7 +7,7 @@ const src = (label: string, kind: DecisionNodePayload["sources"][0]["kind"]): De
   kind,
 });
 
-export type PlanTreeKind = "core" | "account" | "groups" | "budgeting" | "security" | "compliance";
+export type PlanTreeKind = ClusterId;
 
 export const decisionTreeNodes: Node<DecisionNodePayload>[] = [
   {
@@ -514,34 +514,39 @@ export const complianceTreeEdges: Edge[] = [
   { id: "cm-e4", source: "cm-export", target: "cm-consent", type: "smoothstep", animated: false },
 ];
 
-export const PLAN_CLUSTER_TREE_ROOT_IDS = new Set<string>(["co-root", "ua-root", "gr-root", "bu-root", "se-root", "cm-root"]);
+export const PLAN_CLUSTER_TREE_ROOT_IDS = new Set<string>([
+  "co-root",
+  "ua-root",
+  "gr-root",
+  "bu-root",
+  "se-root",
+  "cm-root",
+  "compliance2-root",
+  "compliance3-root",
+  "compliance4-root",
+  "compliance5-root",
+  "compliance6-root",
+  "compliance7-root",
+  "compliance8-root",
+  "compliance9-root",
+  "compliance10-root",
+  "compliance11-root",
+  "compliance12-root",
+]);
 
-const CLUSTER_FRAME_LABEL: Record<PlanTreeKind, string> = {
-  core: "Core",
-  account: "User Account & Access",
-  groups: "Groups",
-  budgeting: "Budgeting",
-  security: "Security",
-  compliance: "Compliance",
-};
+function prefixForKind(kind: PlanTreeKind): string {
+  if (kind === "core") return "co-";
+  if (kind === "account") return "ua-";
+  if (kind === "groups") return "gr-";
+  if (kind === "budgeting") return "bu-";
+  if (kind === "security") return "se-";
+  if (kind === "compliance") return "cm-";
+  return `${kind}-`;
+}
 
-const CLUSTER_ID_MAP: Record<PlanTreeKind, ClusterId> = {
-  core: "core",
-  account: "account",
-  groups: "groups",
-  budgeting: "budgeting",
-  security: "security",
-  compliance: "compliance",
-};
-
-const PREFIX_BY_KIND: Record<PlanTreeKind, string> = {
-  core: "co-",
-  account: "ua-",
-  groups: "gr-",
-  budgeting: "bu-",
-  security: "se-",
-  compliance: "cm-",
-};
+function labelForKind(kind: PlanTreeKind): string {
+  return CLUSTERS.find((cluster) => cluster.id === kind)?.label ?? "Generated cluster";
+}
 
 export function planTreeKindFromProgramTabId(tabId: string): PlanTreeKind {
   const raw = tabId.replace(/\\/g, "/").toLowerCase();
@@ -559,6 +564,8 @@ export function kindFromNodeId(nodeId: string): PlanTreeKind | null {
   if (nodeId.startsWith("bu-")) return "budgeting";
   if (nodeId.startsWith("se-")) return "security";
   if (nodeId.startsWith("cm-")) return "compliance";
+  const generated = nodeId.match(/^(compliance(?:[2-9]|1[0-2]))-/);
+  if (generated) return generated[1] as PlanTreeKind;
   return null;
 }
 
@@ -569,11 +576,13 @@ export function planKindFromClusterFrameId(frameId: string): PlanTreeKind | null
   if (frameId === "cluster-overview-budgeting") return "budgeting";
   if (frameId === "cluster-overview-security") return "security";
   if (frameId === "cluster-overview-compliance") return "compliance";
+  const generated = frameId.match(/^cluster-overview-(compliance(?:[2-9]|1[0-2]))$/);
+  if (generated) return generated[1] as PlanTreeKind;
   return null;
 }
 
 export function nodesArgForClusterFit(kind: PlanTreeKind, flowNodes: Node[]): { id: string }[] {
-  const prefix = PREFIX_BY_KIND[kind];
+  const prefix = prefixForKind(kind);
   const out: { id: string }[] = [];
   for (const n of flowNodes) {
     if ((n.type === "decision" || n.type === "branch") && n.id.startsWith(prefix)) {
@@ -581,6 +590,74 @@ export function nodesArgForClusterFit(kind: PlanTreeKind, flowNodes: Node[]): { 
     }
   }
   return out;
+}
+
+function generatedComplianceTree(kind: PlanTreeKind): { nodes: Node<DecisionNodePayload>[]; edges: Edge[] } {
+  const prefix = prefixForKind(kind);
+  const label = labelForKind(kind);
+  return {
+    nodes: [
+      {
+        id: `${prefix}root`,
+        type: "decision",
+        position: { x: 200, y: 24 },
+        data: {
+          title: label,
+          summary: "Mock AI-generated cluster for reviewing retention, consent, and export-readiness decisions.",
+          clusterId: kind,
+          planSourceTabId: "security-ts",
+          sources: [src("Generated cluster prompt", "prompt")],
+          options: [
+            { id: `${prefix}retention`, label: "Retention", confidence: 61, summary: "Define how long financial records are kept." },
+            { id: `${prefix}export`, label: "Export", confidence: 39, summary: "Prepare user-visible exports and deletion traces." },
+          ],
+        },
+      },
+      {
+        id: `${prefix}retention`,
+        type: "branch",
+        position: { x: 40, y: 210 },
+        data: {
+          title: "RETENTION - 61%",
+          summary: "Keep audit records long enough for disputes without over-retaining private data.",
+          clusterId: kind,
+          planSourceTabId: "security-ts",
+          sources: [src("AI-generated compliance feature", "feature")],
+        },
+      },
+      {
+        id: `${prefix}export`,
+        type: "branch",
+        position: { x: 412, y: 200 },
+        data: {
+          title: "EXPORT - 39%",
+          summary: "Let users inspect, export, and understand stored financial information.",
+          clusterId: kind,
+          planSourceTabId: "security-ts",
+          sources: [src("Data portability assumption", "assumption")],
+        },
+      },
+      {
+        id: `${prefix}consent`,
+        type: "decision",
+        position: { x: 250, y: 372 },
+        data: {
+          title: "Consent checks",
+          summary: "Confirm consent before exposing shared financial records outside a group.",
+          clusterId: kind,
+          planSourceTabId: "security-ts",
+          sources: [src("Generated review checkpoint", "feature")],
+          confirmed: true,
+        },
+      },
+    ],
+    edges: [
+      { id: `${prefix}e1`, source: `${prefix}root`, target: `${prefix}retention`, type: "smoothstep", animated: false },
+      { id: `${prefix}e2`, source: `${prefix}root`, target: `${prefix}export`, type: "smoothstep", animated: false },
+      { id: `${prefix}e3`, source: `${prefix}retention`, target: `${prefix}consent`, type: "smoothstep", animated: false },
+      { id: `${prefix}e4`, source: `${prefix}export`, target: `${prefix}consent`, type: "smoothstep", animated: false },
+    ],
+  };
 }
 
 function treeNodesAndEdges(kind: PlanTreeKind): { nodes: Node<DecisionNodePayload>[]; edges: Edge[] } {
@@ -598,7 +675,7 @@ function treeNodesAndEdges(kind: PlanTreeKind): { nodes: Node<DecisionNodePayloa
     case "compliance":
       return { nodes: complianceTreeNodes, edges: complianceTreeEdges };
     default:
-      return { nodes: decisionTreeNodes, edges: decisionTreeEdges };
+      return generatedComplianceTree(kind);
   }
 }
 
@@ -701,7 +778,7 @@ export function planTreePackForExplorerTab(programTabId: string): { nodes: Node[
   };
 }
 
-const OVERVIEW_ORDER: PlanTreeKind[] = ["core", "account", "groups", "budgeting", "security", "compliance"];
+const OVERVIEW_ORDER: PlanTreeKind[] = CLUSTERS.map((cluster) => cluster.id);
 
 export function clusterOverviewPack(): { nodes: Node[]; edges: Edge[] } {
   const allNodes: Node<ClusterFrameData | DecisionNodePayload>[] = [];
@@ -731,8 +808,8 @@ export function clusterOverviewPack(): { nodes: Node[]; edges: Edge[] } {
       position: { x: r1.minX - pad, y: r1.minY - pad },
       style: { width: r1.maxX - r1.minX + 2 * pad, height: r1.maxY - r1.minY + 2 * pad },
       data: {
-        label: CLUSTER_FRAME_LABEL[kind],
-        clusterId: CLUSTER_ID_MAP[kind],
+        label: labelForKind(kind),
+        clusterId: kind,
         clusterMat: true,
       },
       draggable: true,
@@ -749,13 +826,8 @@ export function clusterOverviewPack(): { nodes: Node[]; edges: Edge[] } {
 
 export function layoutClusterFramesForOverview(nodes: Node[]): Node[] {
   const contentByKind: Record<PlanTreeKind, Node<DecisionNodePayload>[]> = {
-    core: [],
-    account: [],
-    groups: [],
-    budgeting: [],
-    security: [],
-    compliance: [],
-  };
+    ...Object.fromEntries(CLUSTERS.map((cluster) => [cluster.id, []])),
+  } as Record<PlanTreeKind, Node<DecisionNodePayload>[]>;
   for (const n of nodes) {
     if (n.type !== "decision" && n.type !== "branch") continue;
     const k = kindFromNodeId(n.id);

@@ -1,4 +1,21 @@
-export type ClusterId = "core" | "account" | "groups" | "budgeting" | "security" | "compliance";
+export type ClusterId =
+  | "core"
+  | "account"
+  | "groups"
+  | "budgeting"
+  | "security"
+  | "compliance"
+  | "compliance2"
+  | "compliance3"
+  | "compliance4"
+  | "compliance5"
+  | "compliance6"
+  | "compliance7"
+  | "compliance8"
+  | "compliance9"
+  | "compliance10"
+  | "compliance11"
+  | "compliance12";
 
 export type WorkspaceTab = "plan" | "program";
 
@@ -19,6 +36,17 @@ export const CLUSTERS: ClusterMeta[] = [
   { id: "budgeting", label: "Budgeting", color: "var(--cluster-budgeting)", hex: "#ff9500" },
   { id: "security", label: "Security", color: "var(--cluster-security)", hex: "#5856d6" },
   { id: "compliance", label: "Compliance", color: "var(--cluster-compliance)", hex: "#af52de" },
+  { id: "compliance2", label: "Compliance 2", color: "var(--cluster-compliance-2)", hex: "#bf5af2" },
+  { id: "compliance3", label: "Compliance 3", color: "var(--cluster-compliance-3)", hex: "#9b5de5" },
+  { id: "compliance4", label: "Compliance 4", color: "var(--cluster-compliance-4)", hex: "#c77dff" },
+  { id: "compliance5", label: "Compliance 5", color: "var(--cluster-compliance-5)", hex: "#b5179e" },
+  { id: "compliance6", label: "Compliance 6", color: "var(--cluster-compliance-6)", hex: "#7209b7" },
+  { id: "compliance7", label: "Compliance 7", color: "var(--cluster-compliance-7)", hex: "#7b2cbf" },
+  { id: "compliance8", label: "Compliance 8", color: "var(--cluster-compliance-8)", hex: "#5a189a" },
+  { id: "compliance9", label: "Compliance 9", color: "var(--cluster-compliance-9)", hex: "#e0aaff" },
+  { id: "compliance10", label: "Compliance 10", color: "var(--cluster-compliance-10)", hex: "#c8b6ff" },
+  { id: "compliance11", label: "Compliance 11", color: "var(--cluster-compliance-11)", hex: "#a06cd5" },
+  { id: "compliance12", label: "Compliance 12", color: "var(--cluster-compliance-12)", hex: "#6247aa" },
 ];
 
 export interface FeatureItem {
