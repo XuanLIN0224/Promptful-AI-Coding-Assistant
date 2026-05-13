@@ -323,6 +323,8 @@ export function FeatureSidebar({
   onPickProgramFile,
   onNavigateLocalFeature,
   onNavigateCluster,
+  onAddCluster,
+  clusters,
   composerPrompt,
   onReorderGlobal,
   onReorderLocal,
@@ -348,6 +350,9 @@ export function FeatureSidebar({
   onNavigateLocalFeature?: (cluster: ClusterId, featureId: string) => void;
   /** Analytics cluster navigator: focus + zoom to a cluster. */
   onNavigateCluster?: (cluster: ClusterId) => void;
+  /** Mock AI: add a generated cluster to the navigator. */
+  onAddCluster?: () => void;
+  clusters?: typeof CLUSTERS;
   /** Current composer text — included when searching “prompts”. */
   composerPrompt?: string;
   onReorderGlobal: (items: FeatureItem[]) => void;
@@ -368,7 +373,8 @@ export function FeatureSidebar({
   const filterActive = queryNorm.length > 0;
 
   const localItems = localByCluster[clusterId];
-  const c = CLUSTERS.find((x) => x.id === clusterId);
+  const analyticsClusters = clusters ?? CLUSTERS;
+  const c = analyticsClusters.find((x) => x.id === clusterId);
 
   const globalFiltered = useMemo(
     () => (filterActive ? globalItems.filter((i) => matchesQuery(queryNorm, i.label)) : globalItems),
@@ -394,9 +400,9 @@ export function FeatureSidebar({
   const clustersForAnalytics = useMemo(
     () =>
       filterActive
-        ? CLUSTERS.filter((cl) => matchesQuery(queryNorm, cl.label) || matchesQuery(queryNorm, cl.id))
-        : CLUSTERS,
-    [filterActive, queryNorm]
+        ? analyticsClusters.filter((cl) => matchesQuery(queryNorm, cl.label) || matchesQuery(queryNorm, cl.id))
+        : analyticsClusters,
+    [analyticsClusters, filterActive, queryNorm]
   );
 
   const composerMatches = useMemo(
@@ -408,7 +414,7 @@ export function FeatureSidebar({
   const localSearchHits = useMemo(() => {
     if (!filterActive) return [];
     const out: Array<{ clusterId: ClusterId; clusterLabel: string; clusterHex?: string; item: FeatureItem }> = [];
-    for (const cl of CLUSTERS) {
+    for (const cl of analyticsClusters) {
       for (const item of localByCluster[cl.id] ?? []) {
         if (matchesQuery(queryNorm, item.label)) {
           out.push({ clusterId: cl.id, clusterLabel: cl.label, clusterHex: cl.hex, item });
@@ -416,7 +422,7 @@ export function FeatureSidebar({
       }
     }
     return out.slice(0, 10);
-  }, [filterActive, queryNorm, localByCluster]);
+  }, [analyticsClusters, filterActive, queryNorm, localByCluster]);
 
   const [renameTarget, setRenameTarget] = useState<null | { variant: "global" | "local"; id: string; initialLabel: string }>(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -809,6 +815,17 @@ export function FeatureSidebar({
                   />
                 ))
               )}
+              {onAddCluster && !filterActive ? (
+                <button
+                  type="button"
+                  className="pf-cluster-dots__add"
+                  title="Generate a new cluster"
+                  aria-label="Generate a new cluster"
+                  onClick={onAddCluster}
+                >
+                  +
+                </button>
+              ) : null}
             </div>
           </div>
         </Panel>

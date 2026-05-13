@@ -46,7 +46,7 @@ import {
   pathNodeIdsFromRootResolved,
   resolvedParentForNode,
 } from "../treePath";
-import type { ClusterFrameData, ClusterId, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode } from "../types";
+import type { ClusterFrameData, ClusterId, DecisionNodePayload, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode } from "../types";
 import { CLUSTERS } from "../types";
 
 const planEdgeTypes = { fileGraphCenter: FileGraphCenterEdge };
@@ -141,6 +141,7 @@ function Inner({
   mode,
   planExplorerTabId,
   planClusterFocus,
+  enabledClusterIds,
   onSelection,
   planTreeSelections,
   onPlanTreeSelectionsChange,
@@ -158,6 +159,7 @@ function Inner({
   mode: PlanCanvasMode;
   planExplorerTabId: string;
   planClusterFocus: ClusterId;
+  enabledClusterIds: readonly ClusterId[];
   onSelection: (p: OnSelectionChangeParams) => void;
   planTreeSelections: Partial<Record<PlanTreeKind, string | null>>;
   onPlanTreeSelectionsChange: Dispatch<SetStateAction<Partial<Record<PlanTreeKind, string | null>>>>;
@@ -175,6 +177,7 @@ function Inner({
   const isOverview = mode === "overview";
   const isGraph = mode === "nodegraph";
   const overviewPack = useMemo(() => clusterOverviewPack(), []);
+  const enabledClusterSet = useMemo(() => new Set(enabledClusterIds), [enabledClusterIds]);
   const graphPack = useMemo(() => fileGraphPack(), []);
   const allTreeParents = useMemo(() => parentIdsFromEdges(overviewPack.edges), [overviewPack.edges]);
 
@@ -189,6 +192,7 @@ function Inner({
   const [collapsedTreeNodeIds, setCollapsedTreeNodeIds] = useState<Set<string>>(() =>
     initiallyCollapsedParentIds(allTreeParents)
   );
+  const [nodeTextEdits, setNodeTextEdits] = useState<Record<string, { title: string; summary: string }>>({});
   const [treeParentChoiceByKind, setTreeParentChoiceByKind] = useState<Partial<Record<PlanTreeKind, Record<string, string>>>>({});
   const [graphDragging, setGraphDragging] = useState(false);
   const flowInstanceRef = useRef<ReactFlowInstance | null>(null);
@@ -288,6 +292,27 @@ function Inner({
     });
   }, []);
 
+  const handleTreeEditNode = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((candidate) => candidate.id === nodeId);
+      if (!node || (node.type !== "decision" && node.type !== "branch")) return;
+      const data = node.data as DecisionNodePayload;
+      const current = nodeTextEdits[nodeId] ?? { title: data.title, summary: data.summary };
+      const title = window.prompt("Edit node title", current.title);
+      if (title === null) return;
+      const summary = window.prompt("Edit node summary", current.summary);
+      if (summary === null) return;
+      setNodeTextEdits((prev) => ({
+        ...prev,
+        [nodeId]: {
+          title: title.trim() || current.title,
+          summary: summary.trim() || current.summary,
+        },
+      }));
+    },
+    [nodeTextEdits, nodes]
+  );
+
   const handleTreeUndo = useCallback(
     (fromNodeId: string) => {
       setTreeHoverId(null);
@@ -348,8 +373,9 @@ function Inner({
 
     const overviewNodes = nodes.map((n) => {
       const kind = nodeKind(n);
+      const hiddenByEnabledCluster = kind ? !enabledClusterSet.has(kind) : false;
       const hiddenByCluster = !showAllClusters && kind !== visibleKind;
-      const hidden = hiddenByCluster || hiddenByCollapse.has(n.id);
+      const hidden = hiddenByEnabledCluster || hiddenByCluster || hiddenByCollapse.has(n.id);
       if (hidden) hiddenIds.add(n.id);
 
       if (n.type === "clusterFrame") {
@@ -388,6 +414,7 @@ function Inner({
         zIndex: 1,
         data: {
           ...(n.data as object),
+          ...(nodeTextEdits[n.id] ?? {}),
           treeCommitted: committed,
           treeHoverPath: !committed && (hoverSet?.has(n.id) ?? false),
           treePathHover: treeHoverId === n.id,
@@ -397,6 +424,7 @@ function Inner({
           treeChildrenExpanded: !collapsedTreeNodeIds.has(n.id),
           onTreeToggleChildren: handleTreeToggleChildren,
           featuresGenerated: generatedFeatureNodeIds.has(n.id),
+          onEditNode: handleTreeEditNode,
           onGenerateFeatures: (_nodeId: string, target: "global" | "local") =>
             onGenerateFeatures({
               nodeId: n.id,
@@ -457,12 +485,15 @@ function Inner({
     planTreeSelections,
     treeParentChoiceByKind,
     planClusterFocus,
+    enabledClusterSet,
     incomingParents,
     treeHoverId,
     hoverParentOverrideForKind,
     handleTreeUndo,
     handleTreeToggleChildren,
+    handleTreeEditNode,
     generatedFeatureNodeIds,
+    nodeTextEdits,
     onGenerateFeatures,
   ]);
 
@@ -655,6 +686,7 @@ export function PlanCanvas({
   mode,
   planExplorerTabId,
   planClusterFocus,
+  enabledClusterIds,
   onSelection,
   planTreeSelections,
   onPlanTreeSelectionsChange,
@@ -672,6 +704,7 @@ export function PlanCanvas({
   mode: PlanCanvasMode;
   planExplorerTabId: string;
   planClusterFocus: ClusterId;
+  enabledClusterIds: readonly ClusterId[];
   onSelection: (p: OnSelectionChangeParams) => void;
   planTreeSelections: Partial<Record<PlanTreeKind, string | null>>;
   onPlanTreeSelectionsChange: Dispatch<SetStateAction<Partial<Record<PlanTreeKind, string | null>>>>;
@@ -695,6 +728,7 @@ export function PlanCanvas({
             mode={mode}
             planExplorerTabId={planExplorerTabId}
             planClusterFocus={planClusterFocus}
+            enabledClusterIds={enabledClusterIds}
             onSelection={stableOnSelection}
             planTreeSelections={planTreeSelections}
             onPlanTreeSelectionsChange={onPlanTreeSelectionsChange}

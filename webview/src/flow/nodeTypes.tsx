@@ -111,6 +111,27 @@ function TreeGenerateButton({
   );
 }
 
+function TreeEditButton({ onEdit }: { onEdit: () => void }) {
+  return (
+    <button
+      type="button"
+      className="pf-tree-edit nodrag"
+      aria-label="Edit decision node"
+      title="Edit node text"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onEdit();
+      }}
+    >
+      <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+      </svg>
+    </button>
+  );
+}
+
 export function DecisionNode({ id, data, selected }: NodeProps<DecisionNodePayload>) {
   const accent = clusterColor(data.clusterId);
   const committed = data.treeCommitted;
@@ -152,6 +173,7 @@ export function DecisionNode({ id, data, selected }: NodeProps<DecisionNodePaylo
         <span className="pf-node__title">{data.title}</span>
         <div className="pf-node__tools nodrag">
           <TreeGenerateButton generated={data.featuresGenerated} onGenerate={(target) => data.onGenerateFeatures?.(id, target)} />
+          {data.onEditNode ? <TreeEditButton onEdit={() => data.onEditNode?.(id)} /> : null}
           {data.treeCanToggleChildren ? (
             <TreeExpandButton expanded={data.treeChildrenExpanded !== false} onToggle={() => data.onTreeToggleChildren?.(id)} />
           ) : null}
@@ -208,6 +230,7 @@ export function BranchNode({ id, data, selected }: NodeProps<DecisionNodePayload
         </span>
         <div className="pf-node__tools nodrag">
           <TreeGenerateButton generated={data.featuresGenerated} onGenerate={(target) => data.onGenerateFeatures?.(id, target)} />
+          {data.onEditNode ? <TreeEditButton onEdit={() => data.onEditNode?.(id)} /> : null}
           {data.treeCanToggleChildren ? (
             <TreeExpandButton expanded={data.treeChildrenExpanded !== false} onToggle={() => data.onTreeToggleChildren?.(id)} />
           ) : null}

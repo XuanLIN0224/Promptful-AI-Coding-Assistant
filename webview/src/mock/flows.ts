@@ -7,7 +7,7 @@ const src = (label: string, kind: DecisionNodePayload["sources"][0]["kind"]): De
   kind,
 });
 
-export type PlanTreeKind = "core" | "account" | "groups" | "budgeting" | "security";
+export type PlanTreeKind = "core" | "account" | "groups" | "budgeting" | "security" | "compliance";
 
 export const decisionTreeNodes: Node<DecisionNodePayload>[] = [
   {
@@ -176,6 +176,18 @@ export const accountTreeNodes: Node<DecisionNodePayload>[] = [
       sources: [src("Subscription tier note", "feature")],
     },
   },
+  {
+    id: "ua-family",
+    type: "branch",
+    position: { x: 582, y: 320 },
+    data: {
+      title: "FAMILY - 13%",
+      summary: "Household-oriented billing and shared account limits.",
+      clusterId: "account",
+      planSourceTabId: "auth-ts",
+      sources: [src("Family tier assumption", "assumption")],
+    },
+  },
 ];
 
 export const accountTreeEdges: Edge[] = [
@@ -183,6 +195,7 @@ export const accountTreeEdges: Edge[] = [
   { id: "ua-e2", source: "ua-root", target: "ua-subscription", type: "smoothstep", animated: false },
   { id: "ua-e3", source: "ua-subscription", target: "ua-free", type: "smoothstep", animated: false },
   { id: "ua-e4", source: "ua-subscription", target: "ua-plus", type: "smoothstep", animated: false },
+  { id: "ua-e5", source: "ua-subscription", target: "ua-family", type: "smoothstep", animated: false },
 ];
 
 export const groupsTreeNodes: Node<DecisionNodePayload>[] = [
@@ -438,7 +451,70 @@ export const securityTreeEdges: Edge[] = [
   { id: "se-e5", source: "se-audit", target: "se-encrypt", type: "smoothstep", animated: false },
 ];
 
-export const PLAN_CLUSTER_TREE_ROOT_IDS = new Set<string>(["co-root", "ua-root", "gr-root", "bu-root", "se-root"]);
+export const complianceTreeNodes: Node<DecisionNodePayload>[] = [
+  {
+    id: "cm-root",
+    type: "decision",
+    position: { x: 200, y: 24 },
+    data: {
+      title: "Compliance",
+      summary: "Mock AI-generated cluster for retention, consent, and export-readiness decisions.",
+      clusterId: "compliance",
+      planSourceTabId: "security-ts",
+      sources: [src("Generated cluster prompt", "prompt")],
+      options: [
+        { id: "cm-retention", label: "Retention", confidence: 61, summary: "Define how long financial records are kept." },
+        { id: "cm-export", label: "Export", confidence: 39, summary: "Prepare user-visible exports and deletion traces." },
+      ],
+    },
+  },
+  {
+    id: "cm-retention",
+    type: "branch",
+    position: { x: 40, y: 210 },
+    data: {
+      title: "RETENTION - 61%",
+      summary: "Keep audit records long enough for disputes without over-retaining private data.",
+      clusterId: "compliance",
+      planSourceTabId: "security-ts",
+      sources: [src("AI-generated compliance feature", "feature")],
+    },
+  },
+  {
+    id: "cm-export",
+    type: "branch",
+    position: { x: 412, y: 200 },
+    data: {
+      title: "EXPORT - 39%",
+      summary: "Let users inspect, export, and understand stored financial information.",
+      clusterId: "compliance",
+      planSourceTabId: "security-ts",
+      sources: [src("Data portability assumption", "assumption")],
+    },
+  },
+  {
+    id: "cm-consent",
+    type: "decision",
+    position: { x: 250, y: 372 },
+    data: {
+      title: "Consent checks",
+      summary: "Confirm consent before exposing shared financial records outside a group.",
+      clusterId: "compliance",
+      planSourceTabId: "security-ts",
+      sources: [src("Generated review checkpoint", "feature")],
+      confirmed: true,
+    },
+  },
+];
+
+export const complianceTreeEdges: Edge[] = [
+  { id: "cm-e1", source: "cm-root", target: "cm-retention", type: "smoothstep", animated: false },
+  { id: "cm-e2", source: "cm-root", target: "cm-export", type: "smoothstep", animated: false },
+  { id: "cm-e3", source: "cm-retention", target: "cm-consent", type: "smoothstep", animated: false },
+  { id: "cm-e4", source: "cm-export", target: "cm-consent", type: "smoothstep", animated: false },
+];
+
+export const PLAN_CLUSTER_TREE_ROOT_IDS = new Set<string>(["co-root", "ua-root", "gr-root", "bu-root", "se-root", "cm-root"]);
 
 const CLUSTER_FRAME_LABEL: Record<PlanTreeKind, string> = {
   core: "Core",
@@ -446,6 +522,7 @@ const CLUSTER_FRAME_LABEL: Record<PlanTreeKind, string> = {
   groups: "Groups",
   budgeting: "Budgeting",
   security: "Security",
+  compliance: "Compliance",
 };
 
 const CLUSTER_ID_MAP: Record<PlanTreeKind, ClusterId> = {
@@ -454,6 +531,7 @@ const CLUSTER_ID_MAP: Record<PlanTreeKind, ClusterId> = {
   groups: "groups",
   budgeting: "budgeting",
   security: "security",
+  compliance: "compliance",
 };
 
 const PREFIX_BY_KIND: Record<PlanTreeKind, string> = {
@@ -462,6 +540,7 @@ const PREFIX_BY_KIND: Record<PlanTreeKind, string> = {
   groups: "gr-",
   budgeting: "bu-",
   security: "se-",
+  compliance: "cm-",
 };
 
 export function planTreeKindFromProgramTabId(tabId: string): PlanTreeKind {
@@ -479,6 +558,7 @@ export function kindFromNodeId(nodeId: string): PlanTreeKind | null {
   if (nodeId.startsWith("gr-")) return "groups";
   if (nodeId.startsWith("bu-")) return "budgeting";
   if (nodeId.startsWith("se-")) return "security";
+  if (nodeId.startsWith("cm-")) return "compliance";
   return null;
 }
 
@@ -488,6 +568,7 @@ export function planKindFromClusterFrameId(frameId: string): PlanTreeKind | null
   if (frameId === "cluster-overview-groups") return "groups";
   if (frameId === "cluster-overview-budgeting") return "budgeting";
   if (frameId === "cluster-overview-security") return "security";
+  if (frameId === "cluster-overview-compliance") return "compliance";
   return null;
 }
 
@@ -514,6 +595,8 @@ function treeNodesAndEdges(kind: PlanTreeKind): { nodes: Node<DecisionNodePayloa
       return { nodes: budgetingTreeNodes, edges: budgetingTreeEdges };
     case "security":
       return { nodes: securityTreeNodes, edges: securityTreeEdges };
+    case "compliance":
+      return { nodes: complianceTreeNodes, edges: complianceTreeEdges };
     default:
       return { nodes: decisionTreeNodes, edges: decisionTreeEdges };
   }
@@ -618,7 +701,7 @@ export function planTreePackForExplorerTab(programTabId: string): { nodes: Node[
   };
 }
 
-const OVERVIEW_ORDER: PlanTreeKind[] = ["core", "account", "groups", "budgeting", "security"];
+const OVERVIEW_ORDER: PlanTreeKind[] = ["core", "account", "groups", "budgeting", "security", "compliance"];
 
 export function clusterOverviewPack(): { nodes: Node[]; edges: Edge[] } {
   const allNodes: Node<ClusterFrameData | DecisionNodePayload>[] = [];
@@ -671,6 +754,7 @@ export function layoutClusterFramesForOverview(nodes: Node[]): Node[] {
     groups: [],
     budgeting: [],
     security: [],
+    compliance: [],
   };
   for (const n of nodes) {
     if (n.type !== "decision" && n.type !== "branch") continue;

@@ -1,4 +1,4 @@
-export type ClusterId = "core" | "account" | "groups" | "budgeting" | "security";
+export type ClusterId = "core" | "account" | "groups" | "budgeting" | "security" | "compliance";
 
 export type WorkspaceTab = "plan" | "program";
 
@@ -18,6 +18,7 @@ export const CLUSTERS: ClusterMeta[] = [
   { id: "groups", label: "Groups", color: "var(--cluster-groups)", hex: "#34c759" },
   { id: "budgeting", label: "Budgeting", color: "var(--cluster-budgeting)", hex: "#ff9500" },
   { id: "security", label: "Security", color: "var(--cluster-security)", hex: "#5856d6" },
+  { id: "compliance", label: "Compliance", color: "var(--cluster-compliance)", hex: "#af52de" },
 ];
 
 export interface FeatureItem {
@@ -77,11 +78,13 @@ export interface DecisionNodePayload {
   featuresGenerated?: boolean;
   /** Called when the user asks the mock assistant to generate feature chips */
   onGenerateFeatures?: (nodeId: string, target: "global" | "local") => void;
+  /** Mock editing affordance for the decision tree content */
+  onEditNode?: (nodeId: string) => void;
 }
 
 export interface FileGraphPayload {
   path: string;
-  clusterShare: Record<ClusterId, number>;
+  clusterShare: Partial<Record<ClusterId, number>>;
   /** Node graph (Obsidian-style) visual state */
   graphEmphasis?: "none" | "focus" | "neighbor" | "dim";
 }

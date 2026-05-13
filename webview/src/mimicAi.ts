@@ -12,6 +12,7 @@ const clusterName: Record<ClusterId, string> = {
   groups: "Groups",
   budgeting: "Budgeting",
   security: "Security",
+  compliance: "Compliance",
 };
 
 export function mimicAi(prompt: string, cluster: ClusterId): MimicResult {

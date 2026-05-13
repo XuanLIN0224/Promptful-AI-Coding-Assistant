@@ -24,6 +24,7 @@ const PROGRAM_TAB_BY_CLUSTER: Record<ClusterId, string> = {
   groups: "groups-ts",
   budgeting: "budgeting-ts",
   security: "security-ts",
+  compliance: "security-ts",
 };
 const WEBVIEW_VSCODE = (() => {
   const g = globalThis as unknown as { acquireVsCodeApi?: () => { postMessage: (msg: unknown) => void } };
@@ -88,6 +89,7 @@ const initialLocal = (): Record<ClusterId, FeatureItem[]> => ({
   groups: [],
   budgeting: [],
   security: [],
+  compliance: [],
 });
 
 const GENERATED_FEATURE_LABELS: Record<string, string> = {
@@ -118,6 +120,10 @@ const GENERATED_FEATURE_LABELS: Record<string, string> = {
   "se-budget-summary": "Misplaced budget reporting suggestion",
   "se-invite-ui": "Misplaced group invite suggestion",
   "se-encrypt": "Sensitive data encryption",
+  "cm-root": "Generated compliance cluster",
+  "cm-retention": "Retention rule review",
+  "cm-export": "Export readiness",
+  "cm-consent": "Consent checkpoint",
 };
 
 function generatedFeatureLabel(request: GeneratedFeatureRequest): string {
@@ -129,10 +135,11 @@ function generatedFeatureLabel(request: GeneratedFeatureRequest): string {
 
 const TERMINAL_NODE_IDS_BY_KIND: Record<PlanTreeKind, ReadonlySet<string>> = {
   core: new Set(["co-equal", "co-cents", "co-percent", "co-settle"]),
-  account: new Set(["ua-signin", "ua-free", "ua-plus"]),
+  account: new Set(["ua-signin", "ua-free", "ua-plus", "ua-family"]),
   groups: new Set(["gr-household", "gr-invite", "gr-balances"]),
   budgeting: new Set(["bu-alerts", "bu-summary"]),
   security: new Set(["se-access", "se-budget-summary", "se-invite-ui", "se-encrypt"]),
+  compliance: new Set(["cm-retention", "cm-export", "cm-consent"]),
 };
 
 function featureIdsForNode(nodeId: string): string[] {
@@ -153,6 +160,7 @@ export default function App() {
   const [localByCluster, setLocalByCluster] = useState(initialLocal);
   const [completedClusterIds, setCompletedClusterIds] = useState<Set<PlanTreeKind>>(() => new Set());
   const [generatedFeatureNodeIds, setGeneratedFeatureNodeIds] = useState<Set<string>>(() => new Set());
+  const [complianceClusterAdded, setComplianceClusterAdded] = useState(false);
   const [planApplied, setPlanApplied] = useState(false);
   const [activeContext, setActiveContext] = useState<{ kind: "global" | "local"; id: string } | null>(null);
   const [scopeLabel, setScopeLabel] = useState<string | null>("Terminus");
@@ -170,15 +178,21 @@ export default function App() {
   const [workspaceProgramTabs, setWorkspaceProgramTabs] = useState<Array<{ id: string; label: string; path: string; code: string }>>([]);
 
   const programCatalog = useMemo(() => workspaceProgramTabs, [workspaceProgramTabs]);
+  const visibleClusters = useMemo(
+    () => CLUSTERS.filter((cluster) => complianceClusterAdded || cluster.id !== "compliance"),
+    [complianceClusterAdded]
+  );
+  const visibleClusterIds = useMemo(() => visibleClusters.map((cluster) => cluster.id), [visibleClusters]);
 
   const completedClusterCount = completedClusterIds.size;
-  const clusterTotal = CLUSTERS.length;
+  const clusterTotal = visibleClusters.length;
 
   useEffect(() => {
     setCompletedClusterIds((prev) => {
       const next = new Set(prev);
       let changed = false;
       (Object.keys(TERMINAL_NODE_IDS_BY_KIND) as PlanTreeKind[]).forEach((kind) => {
+        if (!visibleClusterIds.includes(kind)) return;
         const selection = planTreeSelections[kind] ?? null;
         const complete = selection ? TERMINAL_NODE_IDS_BY_KIND[kind].has(selection) : false;
         if (complete && !next.has(kind)) {
@@ -191,7 +205,7 @@ export default function App() {
       });
       return changed ? next : prev;
     });
-  }, [planTreeSelections]);
+  }, [planTreeSelections, visibleClusterIds]);
 
   const handlePlanTreeSelectionsChange = useCallback(
     (update: SetStateAction<Partial<Record<PlanTreeKind, string | null>>>) => {
@@ -686,6 +700,17 @@ export default function App() {
     setAssistantLine(`Showing the linked ${CLUSTERS.find((c) => c.id === cluster)?.label ?? "cluster"} decision in Plan.`);
   }, []);
 
+  const addGeneratedCluster = useCallback(() => {
+    setComplianceClusterAdded(true);
+    setShowIntro(false);
+    setTab("plan");
+    setPlanMode("overview");
+    setClusterFocus("compliance");
+    setShowAllClusters(false);
+    setPlanExplorerTabId(PROGRAM_TAB_BY_CLUSTER.compliance);
+    setAssistantLine("Mock AI generated a Compliance cluster with editable decision nodes.");
+  }, []);
+
   const startSidebarResize = useCallback(
     (startX: number) => {
       const base = rightSidebarWidth;
@@ -925,7 +950,7 @@ export default function App() {
                 </div>
                 <div className="pf-plan-canvas-wrap">
                   <div className="pf-canvas-legend" aria-label="Cluster legend">
-                    {CLUSTERS.map((c) => (
+                    {visibleClusters.map((c) => (
                       <span key={c.id} className="pf-legend__item">
                         <span className="pf-legend__dot" style={{ background: c.color }} />
                         {c.label}
@@ -936,6 +961,7 @@ export default function App() {
                     mode={planMode}
                     planExplorerTabId={planExplorerTabId}
                     planClusterFocus={clusterFocus}
+                    enabledClusterIds={visibleClusterIds}
                     onSelection={onFlowSelection}
                     planTreeSelections={planTreeSelections}
                     onPlanTreeSelectionsChange={handlePlanTreeSelectionsChange}
@@ -995,11 +1021,13 @@ export default function App() {
           clusterId={clusterFocus}
           globalItems={globalFeatures}
           localByCluster={localByCluster}
+          clusters={visibleClusters}
           sources={sourceItems}
           programFiles={programFileItems}
           onPickProgramFile={pickProgramFileFromSidebar}
           onNavigateLocalFeature={navigateLocalFeature}
           onNavigateCluster={navigateCluster}
+          onAddCluster={complianceClusterAdded ? undefined : addGeneratedCluster}
           composerPrompt={prompt}
           onReorderGlobal={setGlobalFeatures}
           onReorderLocal={(cluster, items) => setLocalByCluster((p) => ({ ...p, [cluster]: items }))}
