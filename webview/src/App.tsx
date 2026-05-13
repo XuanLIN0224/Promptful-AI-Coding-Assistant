@@ -102,7 +102,7 @@ function viewportNearlyEqual(a: Viewport | null, b: Viewport): boolean {
 }
 
 const initialLocal = (): Record<ClusterId, FeatureItem[]> =>
-  Object.fromEntries(CLUSTERS.map((cluster) => [cluster.id, []])) as Record<ClusterId, FeatureItem[]>;
+  Object.fromEntries(CLUSTERS.map((cluster) => [cluster.id, [] as FeatureItem[]])) as Record<ClusterId, FeatureItem[]>;
 
 const GENERATED_FEATURE_LABELS: Record<string, string> = {
   "co-root": "Cost split calculation model",
@@ -233,8 +233,10 @@ export default function App() {
           const completedNext = new Set(completedPrev);
           let changed = false;
 
-          const coreComplete = next.core ? TERMINAL_NODE_IDS_BY_KIND.core.has(next.core) : false;
-          const groupsComplete = next.groups ? TERMINAL_NODE_IDS_BY_KIND.groups.has(next.groups) : false;
+          const coreTerminalNodeIds = terminalNodeIdsForKind("core");
+          const groupsTerminalNodeIds = terminalNodeIdsForKind("groups");
+          const coreComplete = next.core ? coreTerminalNodeIds.has(next.core) : false;
+          const groupsComplete = next.groups ? groupsTerminalNodeIds.has(next.groups) : false;
 
           if (coreComplete && !completedNext.has("core")) {
             completedNext.add("core");

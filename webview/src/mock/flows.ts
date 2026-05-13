@@ -1,5 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 import type { ClusterFrameData, ClusterId, DecisionNodePayload, DecisionOption, FileGraphPayload } from "../types";
+import { CLUSTERS } from "../types";
 
 const src = (label: string, kind: DecisionNodePayload["sources"][0]["kind"]): DecisionNodePayload["sources"][0] => ({
   id: `s-${label}`,
@@ -767,7 +768,7 @@ export function planTreePackForExplorerTab(programTabId: string): { nodes: Node[
     type: "clusterFrame",
     position: { x: minX - p, y: minY - p },
     style: { width: maxX - minX + p * 2, height: maxY - minY + p * 2 },
-    data: { label: CLUSTER_FRAME_LABEL[kind], clusterId: CLUSTER_ID_MAP[kind] },
+    data: { label: labelForKind(kind), clusterId: kind },
     draggable: false,
     selectable: false,
     zIndex: 0,

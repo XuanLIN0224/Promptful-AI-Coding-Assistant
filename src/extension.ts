@@ -264,6 +264,14 @@ function getWebviewContent(extensionUri: vscode.Uri, webview: vscode.Webview): s
 </head>
 <body>
   <div id="root"></div>
+  <script nonce="${nonce}">
+    setTimeout(() => {
+      const root = document.getElementById("root");
+      if (root && root.childElementCount === 0) {
+        root.innerHTML = '<div style="box-sizing:border-box;min-height:100vh;padding:24px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#1d1d1f;background:#f5f5f7;"><h1 style="font-size:16px;margin:0 0 8px;">Promptful webview did not start</h1><p style="font-size:13px;line-height:1.5;margin:0;color:#6e6e73;">Run <code>npm run build:webview</code>, then restart the Extension Development Host. If this message stays, open Developer Tools and check the Console.</p></div>';
+      }
+    }, 1200);
+  </script>
   <script nonce="${nonce}" type="module" src="${scriptUri}"></script>
 </body>
 </html>`;
