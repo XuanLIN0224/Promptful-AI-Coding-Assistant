@@ -998,18 +998,10 @@ export default function App() {
                 <div className="pf-plan-canvas-wrap">
                   <div className="pf-canvas-legend" aria-label="Cluster legend">
                     {visibleClusters.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        className="pf-legend__item pf-legend__item--button"
-                        title={`Rename ${c.label}`}
-                        aria-label={`Rename ${c.label}`}
-                        onClick={() => openClusterRename(c.id)}
-                      >
+                      <span key={c.id} className="pf-legend__item">
                         <span className="pf-legend__dot" style={{ background: c.color }} />
                         <span>{c.label}</span>
-                        <span className="pf-legend__edit" aria-hidden>✎</span>
-                      </button>
+                      </span>
                     ))}
                   </div>
                   <PlanCanvas

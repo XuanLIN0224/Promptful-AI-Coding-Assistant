@@ -514,31 +514,10 @@
   gap: 6px;
 }
 
-.pf-legend__item--button {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  padding: 3px 5px;
-  border-radius: 7px;
-  cursor: pointer;
-}
-
-.pf-legend__item--button:hover {
-  background: rgba(0, 0, 0, 0.045);
-  color: var(--text);
-}
-
 .pf-legend__dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-}
-
-.pf-legend__edit {
-  color: var(--text-secondary);
-  font-size: 10px;
-  line-height: 1;
 }
 
 .pf-toolbar__right {
