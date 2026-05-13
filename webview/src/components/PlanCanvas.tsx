@@ -142,6 +142,7 @@ function Inner({
   planExplorerTabId,
   planClusterFocus,
   enabledClusterIds,
+  clusterLabels,
   onSelection,
   planTreeSelections,
   onPlanTreeSelectionsChange,
@@ -160,6 +161,7 @@ function Inner({
   planExplorerTabId: string;
   planClusterFocus: ClusterId;
   enabledClusterIds: readonly ClusterId[];
+  clusterLabels: Partial<Record<ClusterId, string>>;
   onSelection: (p: OnSelectionChangeParams) => void;
   planTreeSelections: Partial<Record<PlanTreeKind, string | null>>;
   onPlanTreeSelectionsChange: Dispatch<SetStateAction<Partial<Record<PlanTreeKind, string | null>>>>;
@@ -387,7 +389,7 @@ function Inner({
           ...n,
           hidden,
           draggable: showAllClusters,
-          data: { ...d, clusterMat: true },
+          data: { ...d, label: clusterLabels[d.clusterId] ?? d.label, clusterMat: true },
         };
       }
       if (n.type !== "decision" && n.type !== "branch") return { ...n, hidden };
@@ -489,6 +491,7 @@ function Inner({
     treeParentChoiceByKind,
     planClusterFocus,
     enabledClusterSet,
+    clusterLabels,
     incomingParents,
     treeHoverId,
     hoverParentOverrideForKind,
@@ -725,6 +728,7 @@ export function PlanCanvas({
   planExplorerTabId,
   planClusterFocus,
   enabledClusterIds,
+  clusterLabels,
   onSelection,
   planTreeSelections,
   onPlanTreeSelectionsChange,
@@ -743,6 +747,7 @@ export function PlanCanvas({
   planExplorerTabId: string;
   planClusterFocus: ClusterId;
   enabledClusterIds: readonly ClusterId[];
+  clusterLabels: Partial<Record<ClusterId, string>>;
   onSelection: (p: OnSelectionChangeParams) => void;
   planTreeSelections: Partial<Record<PlanTreeKind, string | null>>;
   onPlanTreeSelectionsChange: Dispatch<SetStateAction<Partial<Record<PlanTreeKind, string | null>>>>;
@@ -767,6 +772,7 @@ export function PlanCanvas({
             planExplorerTabId={planExplorerTabId}
             planClusterFocus={planClusterFocus}
             enabledClusterIds={enabledClusterIds}
+            clusterLabels={clusterLabels}
             onSelection={stableOnSelection}
             planTreeSelections={planTreeSelections}
             onPlanTreeSelectionsChange={onPlanTreeSelectionsChange}

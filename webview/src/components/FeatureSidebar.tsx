@@ -323,6 +323,7 @@ export function FeatureSidebar({
   onPickProgramFile,
   onNavigateLocalFeature,
   onNavigateCluster,
+  onRenameCluster,
   onAddCluster,
   clusters,
   composerPrompt,
@@ -350,6 +351,8 @@ export function FeatureSidebar({
   onNavigateLocalFeature?: (cluster: ClusterId, featureId: string) => void;
   /** Analytics cluster navigator: focus + zoom to a cluster. */
   onNavigateCluster?: (cluster: ClusterId) => void;
+  /** Rename the visible label for a cluster. */
+  onRenameCluster?: (cluster: ClusterId) => void;
   /** Mock AI: add a generated cluster to the navigator. */
   onAddCluster?: () => void;
   clusters?: typeof CLUSTERS;
@@ -804,15 +807,28 @@ export function FeatureSidebar({
                 <span className="pf-side__empty pf-side__empty--inline">{filterActive ? "No cluster matches" : "—"}</span>
               ) : (
                 clustersForAnalytics.map((cl) => (
-                  <button
-                    key={cl.id}
-                    type="button"
-                    className={`pf-cluster-dots__dot ${cl.id === clusterId ? "pf-cluster-dots__dot--active" : ""}`}
-                    style={{ background: cl.color }}
-                    title={`Navigate to ${cl.label}`}
-                    aria-label={`Navigate to ${cl.label}`}
-                    onClick={() => onNavigateCluster?.(cl.id)}
-                  />
+                  <span key={cl.id} className="pf-cluster-dots__item">
+                    <button
+                      type="button"
+                      className={`pf-cluster-dots__dot ${cl.id === clusterId ? "pf-cluster-dots__dot--active" : ""}`}
+                      style={{ background: cl.color }}
+                      title={`Navigate to ${cl.label}. Double-click to rename.`}
+                      aria-label={`Navigate to ${cl.label}`}
+                      onClick={() => onNavigateCluster?.(cl.id)}
+                      onDoubleClick={() => onRenameCluster?.(cl.id)}
+                    />
+                    {onRenameCluster ? (
+                      <button
+                        type="button"
+                        className="pf-cluster-dots__rename"
+                        title={`Rename ${cl.label}`}
+                        aria-label={`Rename ${cl.label}`}
+                        onClick={() => onRenameCluster(cl.id)}
+                      >
+                        ✎
+                      </button>
+                    ) : null}
+                  </span>
                 ))
               )}
               {onAddCluster && !filterActive ? (

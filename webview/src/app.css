@@ -514,10 +514,31 @@
   gap: 6px;
 }
 
+.pf-legend__item--button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 3px 5px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.pf-legend__item--button:hover {
+  background: rgba(0, 0, 0, 0.045);
+  color: var(--text);
+}
+
 .pf-legend__dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+}
+
+.pf-legend__edit {
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1;
 }
 
 .pf-toolbar__right {
@@ -1229,6 +1250,12 @@
   gap: 10px;
 }
 
+.pf-cluster-dots__item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
 .pf-cluster-dots__dot {
   width: 22px;
   height: 22px;
@@ -1245,6 +1272,39 @@
 .pf-cluster-dots__dot--active {
   outline: 2px solid rgba(0, 113, 227, 0.42);
   outline-offset: 1px;
+}
+
+.pf-cluster-dots__rename {
+  position: absolute;
+  right: -8px;
+  bottom: -7px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 120ms ease, transform 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.pf-cluster-dots__item:hover .pf-cluster-dots__rename,
+.pf-cluster-dots__dot--active + .pf-cluster-dots__rename,
+.pf-cluster-dots__rename:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.pf-cluster-dots__rename:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
 }
 
 .pf-cluster-dots__add {

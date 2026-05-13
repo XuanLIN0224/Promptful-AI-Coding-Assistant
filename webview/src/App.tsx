@@ -180,6 +180,8 @@ export default function App() {
   const [completedClusterIds, setCompletedClusterIds] = useState<Set<PlanTreeKind>>(() => new Set());
   const [generatedFeatureNodeIds, setGeneratedFeatureNodeIds] = useState<Set<string>>(() => new Set());
   const [generatedClusterIds, setGeneratedClusterIds] = useState<ClusterId[]>([]);
+  const [clusterLabelOverrides, setClusterLabelOverrides] = useState<Partial<Record<ClusterId, string>>>({});
+  const [clusterRenameDraft, setClusterRenameDraft] = useState<null | { id: ClusterId; label: string }>(null);
   const [planApplied, setPlanApplied] = useState(false);
   const [activeContext, setActiveContext] = useState<{ kind: "global" | "local"; id: string } | null>(null);
   const [scopeLabel, setScopeLabel] = useState<string | null>("Terminus");
@@ -198,10 +200,18 @@ export default function App() {
 
   const programCatalog = useMemo(() => workspaceProgramTabs, [workspaceProgramTabs]);
   const visibleClusters = useMemo(
-    () => CLUSTERS.filter((cluster) => !GENERATED_CLUSTER_IDS.includes(cluster.id) || generatedClusterIds.includes(cluster.id)),
-    [generatedClusterIds]
+    () =>
+      CLUSTERS.filter((cluster) => !GENERATED_CLUSTER_IDS.includes(cluster.id) || generatedClusterIds.includes(cluster.id)).map((cluster) => {
+        const override = clusterLabelOverrides[cluster.id]?.trim();
+        return override ? { ...cluster, label: override } : cluster;
+      }),
+    [clusterLabelOverrides, generatedClusterIds]
   );
   const visibleClusterIds = useMemo(() => visibleClusters.map((cluster) => cluster.id), [visibleClusters]);
+  const clusterLabel = useCallback(
+    (cluster: ClusterId) => clusterLabelOverrides[cluster]?.trim() || CLUSTERS.find((c) => c.id === cluster)?.label || "Cluster",
+    [clusterLabelOverrides]
+  );
 
   const completedClusterCount = completedClusterIds.size;
   const clusterTotal = visibleClusters.length;
@@ -315,12 +325,12 @@ export default function App() {
       }
       case "plan": {
         if (planMode === "nodegraph") return "Node graph";
-        return CLUSTERS.find((c) => c.id === clusterFocus)?.label ?? "Overview";
+        return clusterLabel(clusterFocus);
       }
       default:
         return programCatalog[0]?.label ?? "Plan";
     }
-  }, [tab, planMode, clusterFocus, programTabId, programCatalog]);
+  }, [tab, planMode, clusterFocus, programTabId, programCatalog, clusterLabel]);
 
   const syncContextToProgramTab = useCallback((programTabId: string) => {
     const t = programCatalog.find((x) => x.id === programTabId);
@@ -717,8 +727,8 @@ export default function App() {
     setShowAllClusters(false);
     setPlanExplorerTabId(programTabForCluster(cluster));
     setPlanTreeSelections((prev) => ({ ...prev, [cluster]: nodeId }));
-    setAssistantLine(`Showing the linked ${CLUSTERS.find((c) => c.id === cluster)?.label ?? "cluster"} decision in Plan.`);
-  }, []);
+    setAssistantLine(`Showing the linked ${clusterLabel(cluster)} decision in Plan.`);
+  }, [clusterLabel]);
 
   const addGeneratedCluster = useCallback(() => {
     const nextCluster = GENERATED_CLUSTER_IDS.find((id) => !generatedClusterIds.includes(id));
@@ -733,8 +743,20 @@ export default function App() {
     setClusterFocus(nextCluster);
     setShowAllClusters(false);
     setPlanExplorerTabId(programTabForCluster(nextCluster));
-    setAssistantLine(`Mock AI generated ${CLUSTERS.find((cluster) => cluster.id === nextCluster)?.label ?? "a new cluster"} with editable decision nodes.`);
-  }, [generatedClusterIds]);
+    setAssistantLine(`Mock AI generated ${clusterLabel(nextCluster)} with editable decision nodes.`);
+  }, [clusterLabel, generatedClusterIds]);
+
+  const openClusterRename = useCallback((cluster: ClusterId) => {
+    setClusterRenameDraft({ id: cluster, label: clusterLabel(cluster) });
+  }, [clusterLabel]);
+
+  const applyClusterRename = useCallback(() => {
+    if (!clusterRenameDraft) return;
+    const nextLabel = clusterRenameDraft.label.trim() || clusterLabel(clusterRenameDraft.id);
+    setClusterLabelOverrides((prev) => ({ ...prev, [clusterRenameDraft.id]: nextLabel }));
+    setAssistantLine(`Renamed cluster to ${nextLabel}.`);
+    setClusterRenameDraft(null);
+  }, [clusterLabel, clusterRenameDraft]);
 
   const startSidebarResize = useCallback(
     (startX: number) => {
@@ -976,10 +998,18 @@ export default function App() {
                 <div className="pf-plan-canvas-wrap">
                   <div className="pf-canvas-legend" aria-label="Cluster legend">
                     {visibleClusters.map((c) => (
-                      <span key={c.id} className="pf-legend__item">
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="pf-legend__item pf-legend__item--button"
+                        title={`Rename ${c.label}`}
+                        aria-label={`Rename ${c.label}`}
+                        onClick={() => openClusterRename(c.id)}
+                      >
                         <span className="pf-legend__dot" style={{ background: c.color }} />
-                        {c.label}
-                      </span>
+                        <span>{c.label}</span>
+                        <span className="pf-legend__edit" aria-hidden>✎</span>
+                      </button>
                     ))}
                   </div>
                   <PlanCanvas
@@ -987,6 +1017,7 @@ export default function App() {
                     planExplorerTabId={planExplorerTabId}
                     planClusterFocus={clusterFocus}
                     enabledClusterIds={visibleClusterIds}
+                    clusterLabels={clusterLabelOverrides}
                     onSelection={onFlowSelection}
                     planTreeSelections={planTreeSelections}
                     onPlanTreeSelectionsChange={handlePlanTreeSelectionsChange}
@@ -1052,6 +1083,7 @@ export default function App() {
           onPickProgramFile={pickProgramFileFromSidebar}
           onNavigateLocalFeature={navigateLocalFeature}
           onNavigateCluster={navigateCluster}
+          onRenameCluster={openClusterRename}
           onAddCluster={addGeneratedCluster}
           composerPrompt={prompt}
           onReorderGlobal={setGlobalFeatures}
@@ -1068,6 +1100,35 @@ export default function App() {
           onToggleCollapsed={() => setFeaturesOpen((o) => !o)}
         />
       </div>
+      {clusterRenameDraft && (
+        <div className="pf-tree-edit-modal-backdrop" role="presentation" onMouseDown={() => setClusterRenameDraft(null)}>
+          <div
+            className="pf-tree-edit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pf-cluster-rename-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div id="pf-cluster-rename-title" className="pf-tree-edit-modal__title">Rename cluster</div>
+            <label className="pf-tree-edit-modal__field">
+              <span>Cluster name</span>
+              <input
+                value={clusterRenameDraft.label}
+                onChange={(event) => setClusterRenameDraft((prev) => (prev ? { ...prev, label: event.target.value } : prev))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") applyClusterRename();
+                  if (event.key === "Escape") setClusterRenameDraft(null);
+                }}
+                autoFocus
+              />
+            </label>
+            <div className="pf-tree-edit-modal__actions">
+              <button type="button" className="pf-tree-edit-modal__ghost" onClick={() => setClusterRenameDraft(null)}>Cancel</button>
+              <button type="button" className="pf-tree-edit-modal__confirm" onClick={applyClusterRename}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
