@@ -176,7 +176,7 @@ function Inner({
 }) {
   const isOverview = mode === "overview";
   const isGraph = mode === "nodegraph";
-  const overviewPack = useMemo(() => clusterOverviewPack(), []);
+  const overviewPack = useMemo(() => clusterOverviewPack(enabledClusterIds), [enabledClusterIds]);
   const enabledClusterSet = useMemo(() => new Set(enabledClusterIds), [enabledClusterIds]);
   const graphPack = useMemo(() => fileGraphPack(), []);
   const allTreeParents = useMemo(() => parentIdsFromEdges(overviewPack.edges), [overviewPack.edges]);

@@ -780,12 +780,12 @@ export function planTreePackForExplorerTab(programTabId: string): { nodes: Node[
 
 const OVERVIEW_ORDER: PlanTreeKind[] = CLUSTERS.map((cluster) => cluster.id);
 
-export function clusterOverviewPack(): { nodes: Node[]; edges: Edge[] } {
+export function clusterOverviewPack(enabledKinds: readonly PlanTreeKind[] = CLUSTERS.map((cluster) => cluster.id)): { nodes: Node[]; edges: Edge[] } {
   const allNodes: Node<ClusterFrameData | DecisionNodePayload>[] = [];
   const allEdges: Edge[] = [];
   let xCursor = 40;
 
-  for (const kind of OVERVIEW_ORDER) {
+  for (const kind of OVERVIEW_ORDER.filter((candidate) => enabledKinds.includes(candidate))) {
     const { nodes: baseRaw, edges } = treeNodesAndEdges(kind);
     const raw = stretchTreeLayout(baseRaw, 1.18, 1.24);
     const r0 = coreTreeBoundingRect(raw);
