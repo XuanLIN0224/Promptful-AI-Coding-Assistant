@@ -19,6 +19,7 @@ const ATTACHMENT_ACTIONS = ["link", "upload"] as const;
 const RIGHT_SIDEBAR_MIN = 240;
 const RIGHT_SIDEBAR_MAX = 520;
 const GENERATED_CLUSTER_IDS: ClusterId[] = [
+  "security",
   "compliance",
   "compliance2",
   "compliance3",
@@ -722,7 +723,7 @@ export default function App() {
   const addGeneratedCluster = useCallback(() => {
     const nextCluster = GENERATED_CLUSTER_IDS.find((id) => !generatedClusterIds.includes(id));
     if (!nextCluster) {
-      setAssistantLine("Mock AI has generated the available compliance clusters for this study build.");
+      setAssistantLine("Mock AI has generated the available clusters for this study build.");
       return;
     }
     setGeneratedClusterIds((prev) => [...prev, nextCluster]);
