@@ -23,6 +23,12 @@ import { CLUSTERS } from "../types";
 import type { DecisionOutlineItem } from "../mock/flows";
 
 type ChatMode = "general" | "node" | "move" | "create";
+type ChatHistoryItem = {
+  id: string;
+  mode: ChatMode;
+  role: "user" | "assistant";
+  text: string;
+};
 
 function rgbaFromHex(hex: string, alpha: number): string {
   const raw = hex.replace("#", "");
@@ -338,6 +344,7 @@ export function FeatureSidebar({
   chatMode,
   onChatModeChange,
   assistantLine,
+  chatHistory,
   onMoveNode,
   onReorderGlobal,
   onReorderLocal,
@@ -379,6 +386,7 @@ export function FeatureSidebar({
   chatMode?: ChatMode;
   onChatModeChange?: (mode: ChatMode) => void;
   assistantLine?: string;
+  chatHistory?: ChatHistoryItem[];
   onMoveNode?: (from: { clusterId: ClusterId; nodeId: string }, to: { clusterId: ClusterId; nodeId: string }) => void;
   onReorderGlobal: (items: FeatureItem[]) => void;
   onReorderLocal: (cluster: ClusterId, items: FeatureItem[]) => void;
@@ -462,6 +470,7 @@ export function FeatureSidebar({
   const [moveFromNode, setMoveFromNode] = useState(firstNode);
   const [moveToCluster, setMoveToCluster] = useState<ClusterId>(firstCluster);
   const [moveToNode, setMoveToNode] = useState(firstNode);
+  const chatHistoryRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setOpenLayerIds((prev) => {
@@ -496,6 +505,11 @@ export function FeatureSidebar({
   useEffect(() => {
     if (renameTarget) setRenameDraft(renameTarget.initialLabel);
   }, [renameTarget]);
+
+  useEffect(() => {
+    const el = chatHistoryRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chatHistory?.length]);
 
   const confirmFeatureRename = () => {
     if (!renameTarget) return;
@@ -703,8 +717,9 @@ export function FeatureSidebar({
           </div>
         )}
       </div>
-      <div className="pf-side-layers">
-        <section className="pf-layer-panel pf-layer-panel--clusters" aria-label="Cluster navigator">
+      <PanelGroup direction="vertical" className="pf-side-layers" autoSaveId="promptful-right-sidebar-panels-v1">
+        <Panel defaultSize={46} minSize={20} className="pf-side-panel-slot">
+          <section className="pf-layer-panel pf-layer-panel--clusters" aria-label="Cluster navigator">
           <div className="pf-layer-panel__head">
             <span>Cluster layers</span>
             {onAddCluster && !filterActive ? (
@@ -784,9 +799,15 @@ export function FeatureSidebar({
               })
             )}
           </div>
-        </section>
+          </section>
+        </Panel>
 
-        <section className="pf-layer-panel pf-layer-panel--chat" aria-label="Mock assistant chat">
+        <PanelResizeHandle className="pf-side-resizer" aria-label="Resize cluster and chat panels">
+          <span />
+        </PanelResizeHandle>
+
+        <Panel defaultSize={34} minSize={24} className="pf-side-panel-slot">
+          <section className="pf-layer-panel pf-layer-panel--chat" aria-label="Mock assistant chat">
           <div className="pf-layer-panel__head">Chat</div>
           <div className="pf-chat-card">
             <div className="pf-chat-modes" role="tablist" aria-label="Chat mode">
@@ -844,7 +865,14 @@ export function FeatureSidebar({
                 </button>
               </div>
             )}
-            <div className="pf-chat-output">{assistantLine ?? "Mock assistant ready."}</div>
+            <div className="pf-chat-history" ref={chatHistoryRef} aria-label="Chat history">
+              {(chatHistory?.length ? chatHistory : [{ id: "fallback", mode: chatMode ?? "general", role: "assistant" as const, text: assistantLine ?? "Mock assistant ready." }]).map((entry) => (
+                <div key={entry.id} className={`pf-chat-line pf-chat-line--${entry.role}`}>
+                  <span className="pf-chat-line__meta">{entry.role === "user" ? "You" : entry.mode}</span>
+                  <span className="pf-chat-line__text">{entry.text}</span>
+                </div>
+              ))}
+            </div>
             <div className="pf-chat-input">
               <textarea
                 value={composerPrompt ?? ""}
@@ -857,9 +885,15 @@ export function FeatureSidebar({
               </button>
             </div>
           </div>
-        </section>
+          </section>
+        </Panel>
 
-        <section className="pf-layer-panel pf-layer-panel--source" aria-label="Sources">
+        <PanelResizeHandle className="pf-side-resizer" aria-label="Resize chat and source panels">
+          <span />
+        </PanelResizeHandle>
+
+        <Panel defaultSize={20} minSize={10} className="pf-side-panel-slot">
+          <section className="pf-layer-panel pf-layer-panel--source" aria-label="Sources">
           <div className="pf-layer-panel__head">Source</div>
           <div className="pf-source-list">
             {!filterActive && sources.length === 0 ? (
@@ -889,8 +923,9 @@ export function FeatureSidebar({
               ))
             )}
           </div>
-        </section>
-      </div>
+          </section>
+        </Panel>
+      </PanelGroup>
     </aside>
     </>
   );

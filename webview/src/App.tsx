@@ -34,6 +34,12 @@ const GENERATED_CLUSTER_IDS: ClusterId[] = [
   "compliance12",
 ];
 type ChatMode = "general" | "node" | "move" | "create";
+type ChatHistoryItem = {
+  id: string;
+  mode: ChatMode;
+  role: "user" | "assistant";
+  text: string;
+};
 
 const PROGRAM_TAB_BY_CLUSTER: Partial<Record<ClusterId, string>> = {
   core: "split-ts",
@@ -193,12 +199,21 @@ export default function App() {
   const [prompt, setPrompt] = useState("");
   const [chatMode, setChatMode] = useState<ChatMode>("general");
   const [canvasContextOpen, setCanvasContextOpen] = useState({ global: true, local: true });
+  const [movedRootNodes, setMovedRootNodes] = useState<Partial<Record<ClusterId, DecisionOutlineItem[]>>>({});
   const [attachments, setAttachments] = useState<IntroAttachment[]>([]);
   const [linkCaptureOpen, setLinkCaptureOpen] = useState(false);
   const [linkDraft, setLinkDraft] = useState("");
   const [pendingLinks, setPendingLinks] = useState<string[]>([]);
   const [sourceViewerId, setSourceViewerId] = useState<string | null>(null);
   const [assistantLine, setAssistantLine] = useState(() => assistantLineForProgramTab(INITIAL_PROGRAM_TAB));
+  const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>(() => [
+    {
+      id: "chat-seed",
+      mode: "general",
+      role: "assistant",
+      text: assistantLineForProgramTab(INITIAL_PROGRAM_TAB),
+    },
+  ]);
   const [featuresOpen, setFeaturesOpen] = useState(true);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(320);
   const [programOpenIds, setProgramOpenIds] = useState<string[]>([]);
@@ -222,13 +237,29 @@ export default function App() {
   const decisionOutline = useMemo(
     () =>
       Object.fromEntries(
-        visibleClusterIds.map((kind) => [kind, decisionOutlineForCluster(kind)])
+        visibleClusterIds.map((kind) => {
+          const moved = movedRootNodes[kind] ?? [];
+          return [kind, [...moved, ...decisionOutlineForCluster(kind)]];
+        })
       ) as Partial<Record<ClusterId, DecisionOutlineItem[]>>,
-    [visibleClusterIds]
+    [movedRootNodes, visibleClusterIds]
   );
 
-  const completedClusterCount = completedClusterIds.size;
+  const completedClusterCount = visibleClusterIds.filter((kind) => completedClusterIds.has(kind)).length;
   const clusterTotal = visibleClusters.length;
+  const allVisibleClustersComplete = clusterTotal > 0 && completedClusterCount >= clusterTotal;
+
+  const pushChatHistory = useCallback((role: ChatHistoryItem["role"], text: string, mode: ChatMode = chatMode) => {
+    setChatHistory((prev) => [
+      ...prev,
+      {
+        id: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        mode,
+        role,
+        text,
+      },
+    ]);
+  }, [chatMode]);
 
   useEffect(() => {
     setCompletedClusterIds((prev) => {
@@ -533,7 +564,7 @@ export default function App() {
   }, []);
 
   const applyPlan = useCallback(() => {
-    if (completedClusterIds.size < visibleClusterIds.length || planApplied) return;
+    if (!allVisibleClustersComplete || planApplied) return;
     WEBVIEW_VSCODE?.postMessage({
       type: "promptful/applyPlan",
       files: PROGRAM_EDITOR_TABS.map(({ path, code }) => ({ path, content: code })),
@@ -543,8 +574,10 @@ export default function App() {
     setClusterFocus("core");
     setShowIntro(false);
     setTab("program");
-    setAssistantLine("Plan applied. Starter files have been generated from the confirmed clusters.");
-  }, [completedClusterIds.size, planApplied, visibleClusterIds.length]);
+    const response = "Plan applied. Starter files have been generated from the confirmed clusters.";
+    setAssistantLine(response);
+    pushChatHistory("assistant", response, "general");
+  }, [allVisibleClustersComplete, planApplied, pushChatHistory]);
 
   const sendFromIntro = useCallback(() => {
     if (!consumePromptForMock()) return;
@@ -747,16 +780,22 @@ export default function App() {
     setClusterFocus(cluster);
     setShowAllClusters(false);
     setPlanExplorerTabId(programTabForCluster(cluster));
-    setPlanTreeSelections((prev) => ({ ...prev, [cluster]: item.nodeId }));
+    if (!item.nodeId.startsWith("moved-")) {
+      setPlanTreeSelections((prev) => ({ ...prev, [cluster]: item.nodeId }));
+    }
     setActiveContext({ kind: "node", id: item.nodeId, clusterId: cluster, label: item.title });
     setScopeLabel(item.title);
-    setAssistantLine(`Opened chat history for ${item.title}.`);
-  }, []);
+    const response = `Opened chat history for ${item.title}.`;
+    setAssistantLine(response);
+    pushChatHistory("assistant", response, "node");
+  }, [pushChatHistory]);
 
   const addGeneratedCluster = useCallback(() => {
     const nextCluster = GENERATED_CLUSTER_IDS.find((id) => !generatedClusterIds.includes(id));
     if (!nextCluster) {
-      setAssistantLine("Mock AI has generated the available clusters for this study build.");
+      const response = "Mock AI has generated the available clusters for this study build.";
+      setAssistantLine(response);
+      pushChatHistory("assistant", response, "create");
       return;
     }
     setGeneratedClusterIds((prev) => [...prev, nextCluster]);
@@ -772,12 +811,15 @@ export default function App() {
       setActiveContext({ kind: "node", id: rootNode.nodeId, clusterId: nextCluster, label: rootNode.title });
       setScopeLabel(rootNode.title);
     }
-    setAssistantLine(`Mock AI generated ${clusterLabel(nextCluster)} with editable decision nodes.`);
-  }, [clusterLabel, generatedClusterIds]);
+    const response = `Mock AI generated ${clusterLabel(nextCluster)} with editable decision nodes.`;
+    setAssistantLine(response);
+    pushChatHistory("assistant", response, "create");
+  }, [clusterLabel, generatedClusterIds, pushChatHistory]);
 
   const runMock = useCallback(() => {
     const text = prompt.trim();
     if (!text) return;
+    pushChatHistory("user", text, chatMode);
     if (chatMode === "create") {
       addGeneratedCluster();
       setPrompt("");
@@ -785,41 +827,64 @@ export default function App() {
       return;
     }
     if (chatMode === "move") {
-      setAssistantLine("Mock move prepared. The selected node would be re-homed after participant confirmation.");
+      const response = "Mock move prepared. The selected node will become a new root in the target cluster after participant confirmation.";
+      setAssistantLine(response);
+      pushChatHistory("assistant", response, "move");
       setPrompt("");
       return;
     }
     if (chatMode === "node" || activeContext?.kind === "node") {
       const label = activeContext?.kind === "node" ? activeContext.label : clusterLabel(clusterFocus);
-      setAssistantLine(`Expanded the ${label} decision thread with a mock follow-up.`);
+      const response = `Expanded the ${label} decision thread with a mock follow-up.`;
+      setAssistantLine(response);
+      pushChatHistory("assistant", response, "node");
       setPrompt("");
       return;
     }
-    setAssistantLine("Mock reply: I would compare the current prompt against prior decisions, then suggest the next decision point with confidence ratings.");
+    const response = "Mock reply: I would compare the current prompt against prior decisions, then suggest the next decision point with confidence ratings.";
+    setAssistantLine(response);
+    pushChatHistory("assistant", response, "general");
     setPrompt("");
-  }, [activeContext, addGeneratedCluster, chatMode, clusterFocus, clusterLabel, prompt]);
+  }, [activeContext, addGeneratedCluster, chatMode, clusterFocus, clusterLabel, prompt, pushChatHistory]);
 
   const prepareCreateCluster = useCallback(() => {
     setChatMode("create");
     setPrompt("");
-    setAssistantLine("Describe the cluster to create. The mock assistant will generate it after Send.");
-  }, []);
+    const response = "Describe the cluster to create. The mock assistant will generate it after Send.";
+    setAssistantLine(response);
+    pushChatHistory("assistant", response, "create");
+  }, [pushChatHistory]);
 
   const submitMoveNode = useCallback((from: { clusterId: ClusterId; nodeId: string }, to: { clusterId: ClusterId; nodeId: string }) => {
     const fromNode = decisionOutline[from.clusterId]?.find((item) => item.nodeId === from.nodeId);
     const toNode = decisionOutline[to.clusterId]?.find((item) => item.nodeId === to.nodeId);
+    if (!fromNode) return;
+    const movedNodeId = `moved-${to.clusterId}-${from.nodeId}`;
+    const movedNode: DecisionOutlineItem = {
+      ...fromNode,
+      nodeId: movedNodeId,
+      depth: 0,
+      title: fromNode.title,
+      summary: `Moved from ${clusterLabel(from.clusterId)} as a separate root tree. ${fromNode.summary}`,
+    };
+    setMovedRootNodes((prev) => {
+      const existing = prev[to.clusterId] ?? [];
+      const nextForCluster = [movedNode, ...existing.filter((node) => node.nodeId !== movedNodeId)];
+      return { ...prev, [to.clusterId]: nextForCluster };
+    });
     setChatMode("move");
     setClusterFocus(to.clusterId);
     setShowAllClusters(false);
-    setPlanTreeSelections((prev) => ({ ...prev, [to.clusterId]: to.nodeId }));
     setActiveContext({
       kind: "node",
-      id: to.nodeId,
+      id: movedNodeId,
       clusterId: to.clusterId,
-      label: toNode?.title ?? "target node",
+      label: fromNode.title,
     });
-    setAssistantLine(`Mock move: ${fromNode?.title ?? "selected node"} is staged under ${toNode?.title ?? "target node"}.`);
-  }, [decisionOutline]);
+    const response = `Mock move: ${fromNode.title} is now a new root tree in ${clusterLabel(to.clusterId)}${toNode ? `, referenced against ${toNode.title}` : ""}.`;
+    setAssistantLine(response);
+    pushChatHistory("assistant", response, "move");
+  }, [clusterLabel, decisionOutline, pushChatHistory]);
 
   const openClusterRename = useCallback((cluster: ClusterId) => {
     setClusterRenameDraft({ id: cluster, label: clusterLabel(cluster) });
@@ -1210,6 +1275,7 @@ export default function App() {
           chatMode={chatMode}
           onChatModeChange={setChatMode}
           assistantLine={assistantLine}
+          chatHistory={chatHistory}
           onMoveNode={submitMoveNode}
           onReorderGlobal={setGlobalFeatures}
           onReorderLocal={(cluster, items) => setLocalByCluster((p) => ({ ...p, [cluster]: items }))}
