@@ -620,6 +620,19 @@
   color: var(--text-secondary);
 }
 
+.pf-context-card__head--button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pf-context-card__head--button:hover {
+  color: var(--text);
+}
+
 .pf-context-card__list {
   display: grid;
   gap: 6px;
@@ -762,6 +775,52 @@
 .pf-canvas .pf-tree-edge--hot .react-flow__edge-path {
   /* stroke / glow come from inline edge styles (cluster color) */
   animation: pf-tree-edge-dashflow 1.05s linear infinite;
+}
+
+.pf-canvas .react-flow__controls {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.09);
+  overflow: hidden;
+}
+
+.pf-canvas .react-flow__controls-button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.pf-canvas .react-flow__controls-button:hover {
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.pf-canvas .react-flow__controls-button:last-child,
+.react-flow__controls.pf-controls-with-overview-eye .react-flow__controls-fitview {
+  border-bottom: none;
+}
+
+.pf-canvas .react-flow__controls-button svg {
+  max-width: 16px;
+  max-height: 16px;
+}
+
+.react-flow__controls {
+  overflow: visible;
+}
+
+.pf-flow-controls-eye.react-flow__controls-button {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
 }
 
 @keyframes pf-tree-edge-dashflow {
@@ -1415,11 +1474,15 @@
 }
 
 .pf-layer-panel--clusters {
-  flex: 1 1 auto;
+  flex: 1 1 42%;
+}
+
+.pf-layer-panel--chat {
+  flex: 0 0 auto;
 }
 
 .pf-layer-panel--source {
-  flex: 0 0 min(190px, 34%);
+  flex: 0 0 min(160px, 22%);
 }
 
 .pf-layer-panel__head {
@@ -1451,12 +1514,156 @@
   padding: 0;
 }
 
+.pf-layer-navigator {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.pf-layer-nav-dot {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.88);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.pf-layer-nav-dot--active {
+  outline: 3px solid rgba(10, 132, 255, 0.28);
+  outline-offset: 3px;
+}
+
 .pf-layer-stack {
   display: grid;
   gap: 8px;
   padding: 10px;
   max-height: 100%;
   overflow: auto;
+}
+
+.pf-chat-card {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.pf-chat-modes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--border);
+}
+
+.pf-chat-mode {
+  min-width: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  padding: 7px 4px;
+  cursor: pointer;
+}
+
+.pf-chat-mode--active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.pf-chat-output {
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(250, 250, 250, 0.72);
+  padding: 9px 10px;
+  font-size: 12px;
+  line-height: 1.42;
+  color: var(--text-secondary);
+}
+
+.pf-chat-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.pf-chat-input textarea {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 9px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.pf-chat-input textarea:focus,
+.pf-move-row select:focus {
+  outline: none;
+  border-color: rgba(0, 113, 227, 0.55);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.12);
+}
+
+.pf-chat-input button,
+.pf-move-apply {
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.pf-chat-input button:disabled,
+.pf-move-apply:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pf-move-box {
+  display: grid;
+  gap: 8px;
+}
+
+.pf-move-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 6px;
+  align-items: center;
+}
+
+.pf-move-row span {
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pf-move-row select {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  padding: 7px 8px;
 }
 
 .pf-layer {

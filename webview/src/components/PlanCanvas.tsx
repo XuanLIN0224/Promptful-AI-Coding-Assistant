@@ -12,6 +12,7 @@ import {
   applyNodeChanges,
   Background,
   BackgroundVariant,
+  ControlButton,
   Controls,
   MiniMap,
   ReactFlow,
@@ -50,6 +51,7 @@ import type { ClusterFrameData, ClusterId, DecisionNodePayload, FileGraphPayload
 import { CLUSTERS } from "../types";
 
 const planEdgeTypes = { fileGraphCenter: FileGraphCenterEdge };
+const NEIGHBOR_PULL = 0.52;
 const FILE_NODE_SIZE = 56;
 const OPACITY_FOCUS = 1;
 const OPACITY_NEIGHBOUR = 0.5;
@@ -148,6 +150,7 @@ function Inner({
   onPlanTreeSelectionsChange,
   onClusterFocusChange,
   showAllClusters,
+  onToggleShowAllClusters,
   savedViewport,
   onViewportSave,
   onFlowReady,
@@ -167,6 +170,7 @@ function Inner({
   onPlanTreeSelectionsChange: Dispatch<SetStateAction<Partial<Record<PlanTreeKind, string | null>>>>;
   onClusterFocusChange: (cluster: ClusterId) => void;
   showAllClusters: boolean;
+  onToggleShowAllClusters: () => void;
   savedViewport: Viewport | null;
   onViewportSave: (viewport: Viewport, mode: PlanCanvasMode) => void;
   onFlowReady?: (instance: ReactFlowInstance | null) => void;
@@ -198,6 +202,7 @@ function Inner({
   const [editDraft, setEditDraft] = useState<null | { nodeId: string; title: string; summary: string }>(null);
   const [treeParentChoiceByKind, setTreeParentChoiceByKind] = useState<Partial<Record<PlanTreeKind, Record<string, string>>>>({});
   const [graphDragging, setGraphDragging] = useState(false);
+  const dragLastPosRef = useRef<{ id: string; x: number; y: number } | null>(null);
   const flowInstanceRef = useRef<ReactFlowInstance | null>(null);
   const treeLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewportSaveRaf = useRef<number | null>(null);
@@ -252,6 +257,7 @@ function Inner({
   );
 
   const incomingParents = useMemo(() => buildIncomingParentsMap(edges), [edges]);
+  const graphAdjacency = useMemo(() => (isGraph ? buildAdjacency(edges) : new Map<string, Set<string>>()), [edges, isGraph]);
 
   useEffect(() => {
     if (!isOverview) return;
@@ -338,8 +344,7 @@ function Inner({
 
   const { viewNodes, viewEdges } = useMemo(() => {
     if (isGraph) {
-      const adjacency = buildAdjacency(edges);
-      const neighbours = focusId ? adjacency.get(focusId) : undefined;
+      const neighbours = focusId ? graphAdjacency.get(focusId) : undefined;
       const graphNodes = nodes.map((n) => {
         let emphasis: NonNullable<FileGraphPayload["graphEmphasis"]> = "none";
         let opacity = OPACITY_FOCUS;
@@ -484,6 +489,7 @@ function Inner({
     edges,
     focusId,
     graphDragging,
+    graphAdjacency,
     planExplorerTabId,
     collapsedTreeNodeIds,
     showAllClusters,
@@ -512,6 +518,37 @@ function Inner({
       onNodesChange(changes);
     },
     [isOverview, onNodesChange, setNodes]
+  );
+
+  const propagateNeighborDrag = useCallback(
+    (_event: MouseEvent, node: Node) => {
+      if (!isGraph) return;
+      const prev = dragLastPosRef.current;
+      if (!prev || prev.id !== node.id) {
+        dragLastPosRef.current = { id: node.id, x: node.position.x, y: node.position.y };
+        return;
+      }
+      const dx = node.position.x - prev.x;
+      const dy = node.position.y - prev.y;
+      dragLastPosRef.current = { id: node.id, x: node.position.x, y: node.position.y };
+      if (dx === 0 && dy === 0) return;
+      const followers = graphAdjacency.get(node.id);
+      if (!followers?.size) return;
+      setNodes((nds) =>
+        nds.map((n) =>
+          followers.has(n.id)
+            ? {
+                ...n,
+                position: {
+                  x: n.position.x + dx * NEIGHBOR_PULL,
+                  y: n.position.y + dy * NEIGHBOR_PULL,
+                },
+              }
+            : n
+        )
+      );
+    },
+    [graphAdjacency, isGraph, setNodes]
   );
 
   const handleTreeClick = useCallback(
@@ -659,12 +696,14 @@ function Inner({
           if (!isGraph) return;
           setGraphDragging(true);
           setFocusId(node.id);
+          dragLastPosRef.current = { id: node.id, x: node.position.x, y: node.position.y };
         }}
         onNodeDragStop={() => {
           if (!isGraph) return;
           setGraphDragging(false);
+          dragLastPosRef.current = null;
         }}
-        onNodeDrag={(_evt: MouseEvent, _node: Node) => undefined}
+        onNodeDrag={(evt: MouseEvent, node: Node) => propagateNeighborDrag(evt, node)}
         onNodeClick={(_, node) => handleTreeClick(node)}
         onPaneMouseDown={() => {
           if (isOverview) setTreeHoverId(null);
@@ -677,7 +716,31 @@ function Inner({
         }
       >
         <Background gap={18} size={1} color="rgba(0,0,0,0.06)" variant={BackgroundVariant.Dots} />
-        <Controls showInteractive={false} />
+        <Controls showInteractive={false} className={isOverview ? "pf-controls-with-overview-eye" : undefined}>
+          {isOverview && (
+            <ControlButton
+              className="pf-flow-controls-eye"
+              onClick={onToggleShowAllClusters}
+              title={showAllClusters ? "Hide others" : "Show all"}
+              data-tip={showAllClusters ? "Hide other clusters" : "Show all clusters"}
+              aria-label={showAllClusters ? "Hide other clusters" : "Show all clusters"}
+            >
+              {showAllClusters ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M3 3 21 21" />
+                  <path d="M10.58 10.58A3 3 0 1 0 13.42 13.42" />
+                  <path d="M9.88 5.09A10.94 10.94 0 0 1 12 5c7 0 10 7 10 7a13.05 13.05 0 0 1-2.35 3.88" />
+                  <path d="M6.61 6.61A13.95 13.95 0 0 0 2 12s4 7 10 7a9.74 9.74 0 0 0 4.52-1.22" />
+                </svg>
+              )}
+            </ControlButton>
+          )}
+        </Controls>
         <MiniMap
           pannable
           zoomable
@@ -734,6 +797,7 @@ export function PlanCanvas({
   onPlanTreeSelectionsChange,
   onClusterFocusChange,
   showAllClusters,
+  onToggleShowAllClusters,
   savedViewport,
   onViewportSave,
   onFlowReady,
@@ -753,6 +817,7 @@ export function PlanCanvas({
   onPlanTreeSelectionsChange: Dispatch<SetStateAction<Partial<Record<PlanTreeKind, string | null>>>>;
   onClusterFocusChange: (cluster: ClusterId) => void;
   showAllClusters: boolean;
+  onToggleShowAllClusters: () => void;
   savedViewport: Viewport | null;
   onViewportSave: (viewport: Viewport, mode: PlanCanvasMode) => void;
   onFlowReady?: (instance: ReactFlowInstance | null) => void;
@@ -778,6 +843,7 @@ export function PlanCanvas({
             onPlanTreeSelectionsChange={onPlanTreeSelectionsChange}
             onClusterFocusChange={onClusterFocusChange}
             showAllClusters={showAllClusters}
+            onToggleShowAllClusters={onToggleShowAllClusters}
             savedViewport={savedViewport}
             onViewportSave={onViewportSave}
             onFlowReady={onFlowReady}

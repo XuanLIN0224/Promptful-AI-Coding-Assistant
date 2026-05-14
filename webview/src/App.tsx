@@ -7,7 +7,6 @@ import { IntroOverlay } from "./components/IntroOverlay";
 import type { IntroAttachment } from "./components/IntroOverlay";
 import { PlanCanvas } from "./components/PlanCanvas";
 import { ProgramPane } from "./components/ProgramPane";
-import { PromptDock } from "./components/PromptDock";
 import { assistantLineForProgramTab } from "./assistantLine";
 import { mimicAi } from "./mimicAi";
 import type { DecisionOutlineItem, PlanTreeKind } from "./mock/flows";
@@ -34,6 +33,7 @@ const GENERATED_CLUSTER_IDS: ClusterId[] = [
   "compliance11",
   "compliance12",
 ];
+type ChatMode = "general" | "node" | "move" | "create";
 
 const PROGRAM_TAB_BY_CLUSTER: Partial<Record<ClusterId, string>> = {
   core: "split-ts",
@@ -191,6 +191,8 @@ export default function App() {
   >(null);
   const [scopeLabel, setScopeLabel] = useState<string | null>("Terminus");
   const [prompt, setPrompt] = useState("");
+  const [chatMode, setChatMode] = useState<ChatMode>("general");
+  const [canvasContextOpen, setCanvasContextOpen] = useState({ global: true, local: true });
   const [attachments, setAttachments] = useState<IntroAttachment[]>([]);
   const [linkCaptureOpen, setLinkCaptureOpen] = useState(false);
   const [linkDraft, setLinkDraft] = useState("");
@@ -426,17 +428,6 @@ export default function App() {
     },
     [programOpenIds]
   );
-
-  const chip = useMemo(() => {
-    if (activeContext) {
-      if (activeContext.kind === "node") return `Node - ${activeContext.label}`;
-      const list = activeContext.kind === "global" ? globalFeatures : localByCluster[clusterFocus];
-      const f = list.find((x) => x.id === activeContext.id);
-      if (f) return `${activeContext.kind === "global" ? "Global" : "Local"} - ${f.label}`;
-    }
-    if (scopeLabel) return `Selection - ${scopeLabel}`;
-    return null;
-  }, [activeContext, clusterFocus, globalFeatures, localByCluster, scopeLabel]);
 
   const consumePromptForMock = useCallback(() => {
     const text = prompt.trim();
@@ -787,14 +778,48 @@ export default function App() {
   const runMock = useCallback(() => {
     const text = prompt.trim();
     if (!text) return;
-    if (activeContext?.kind === "node") {
-      setAssistantLine(`Expanded the ${activeContext.label} decision thread with a mock follow-up.`);
+    if (chatMode === "create") {
+      addGeneratedCluster();
+      setPrompt("");
+      setChatMode("node");
+      return;
+    }
+    if (chatMode === "move") {
+      setAssistantLine("Mock move prepared. The selected node would be re-homed after participant confirmation.");
       setPrompt("");
       return;
     }
-    addGeneratedCluster();
+    if (chatMode === "node" || activeContext?.kind === "node") {
+      const label = activeContext?.kind === "node" ? activeContext.label : clusterLabel(clusterFocus);
+      setAssistantLine(`Expanded the ${label} decision thread with a mock follow-up.`);
+      setPrompt("");
+      return;
+    }
+    setAssistantLine("Mock reply: I would compare the current prompt against prior decisions, then suggest the next decision point with confidence ratings.");
     setPrompt("");
-  }, [activeContext, addGeneratedCluster, prompt]);
+  }, [activeContext, addGeneratedCluster, chatMode, clusterFocus, clusterLabel, prompt]);
+
+  const prepareCreateCluster = useCallback(() => {
+    setChatMode("create");
+    setPrompt("");
+    setAssistantLine("Describe the cluster to create. The mock assistant will generate it after Send.");
+  }, []);
+
+  const submitMoveNode = useCallback((from: { clusterId: ClusterId; nodeId: string }, to: { clusterId: ClusterId; nodeId: string }) => {
+    const fromNode = decisionOutline[from.clusterId]?.find((item) => item.nodeId === from.nodeId);
+    const toNode = decisionOutline[to.clusterId]?.find((item) => item.nodeId === to.nodeId);
+    setChatMode("move");
+    setClusterFocus(to.clusterId);
+    setShowAllClusters(false);
+    setPlanTreeSelections((prev) => ({ ...prev, [to.clusterId]: to.nodeId }));
+    setActiveContext({
+      kind: "node",
+      id: to.nodeId,
+      clusterId: to.clusterId,
+      label: toNode?.title ?? "target node",
+    });
+    setAssistantLine(`Mock move: ${fromNode?.title ?? "selected node"} is staged under ${toNode?.title ?? "target node"}.`);
+  }, [decisionOutline]);
 
   const openClusterRename = useCallback((cluster: ClusterId) => {
     setClusterRenameDraft({ id: cluster, label: clusterLabel(cluster) });
@@ -1004,30 +1029,6 @@ export default function App() {
                         </button>
                       ))}
                     </div>
-                    {planMode === "overview" && (
-                      <button
-                        type="button"
-                        className="pf-toolbar__eye"
-                        title={showAllClusters ? "Hide others" : "Show all"}
-                        data-tip={showAllClusters ? "Hide other clusters" : "Show all clusters"}
-                        aria-label={showAllClusters ? "Hide other clusters" : "Show all clusters"}
-                        onClick={() => setShowAllClusters((v) => !v)}
-                      >
-                        {showAllClusters ? (
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                            <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z" />
-                            <circle cx="12" cy="12" r="3" />
-                          </svg>
-                        ) : (
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                            <path d="M3 3 21 21" />
-                            <path d="M10.58 10.58A3 3 0 1 0 13.42 13.42" />
-                            <path d="M9.88 5.09A10.94 10.94 0 0 1 12 5c7 0 10 7 10 7a13.05 13.05 0 0 1-2.35 3.88" />
-                            <path d="M6.61 6.61A13.95 13.95 0 0 0 2 12s4 7 10 7a9.74 9.74 0 0 0 4.52-1.22" />
-                          </svg>
-                        )}
-                      </button>
-                    )}
                   </div>
                   <div className="pf-toolbar__right">
                     <button
@@ -1056,68 +1057,86 @@ export default function App() {
                   </div>
                   <div className="pf-canvas-context" onMouseDown={(event) => event.stopPropagation()}>
                     <section className="pf-context-card pf-context-card--global" aria-label="Global features">
-                      <div className="pf-context-card__head">Global</div>
-                      <div className="pf-context-card__list">
-                        {globalFeatures.length === 0 ? (
-                          <div className="pf-context-card__empty">No global features yet.</div>
-                        ) : (
-                          globalFeatures.map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              className={`pf-context-chip ${activeContext?.kind === "global" && activeContext.id === item.id ? "pf-context-chip--active" : ""}`}
-                              onClick={() => setActiveContext({ kind: "global", id: item.id })}
-                            >
-                              <span>{item.label}</span>
-                              <span
-                                className="pf-context-chip__remove"
-                                role="button"
-                                tabIndex={0}
-                                aria-label={`Remove ${item.label}`}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  removeGlobalFeature(item.id);
-                                }}
+                      <button
+                        type="button"
+                        className="pf-context-card__head pf-context-card__head--button"
+                        onClick={() => setCanvasContextOpen((prev) => ({ ...prev, global: !prev.global }))}
+                      >
+                        <span>Global</span>
+                        <span>{canvasContextOpen.global ? "−" : "+"}</span>
+                      </button>
+                      {canvasContextOpen.global && (
+                        <div className="pf-context-card__list">
+                          {globalFeatures.length === 0 ? (
+                            <div className="pf-context-card__empty">No global features yet.</div>
+                          ) : (
+                            globalFeatures.map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className={`pf-context-chip ${activeContext?.kind === "global" && activeContext.id === item.id ? "pf-context-chip--active" : ""}`}
+                                onClick={() => setActiveContext({ kind: "global", id: item.id })}
                               >
-                                x
-                              </span>
-                            </button>
-                          ))
-                        )}
-                      </div>
+                                <span>{item.label}</span>
+                                <span
+                                  className="pf-context-chip__remove"
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={`Remove ${item.label}`}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    removeGlobalFeature(item.id);
+                                  }}
+                                >
+                                  x
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </section>
                     <section className="pf-context-card pf-context-card--local" aria-label="Local features">
-                      <div className="pf-context-card__head">
-                        Local <span style={visibleClusters.find((cluster) => cluster.id === clusterFocus)?.hex ? { color: visibleClusters.find((cluster) => cluster.id === clusterFocus)?.hex } : undefined}>{clusterLabel(clusterFocus)}</span>
-                      </div>
-                      <div className="pf-context-card__list">
-                        {(localByCluster[clusterFocus] ?? []).length === 0 ? (
-                          <div className="pf-context-card__empty">Generate features from a decision node.</div>
-                        ) : (
-                          (localByCluster[clusterFocus] ?? []).map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              className={`pf-context-chip pf-context-chip--local ${activeContext?.kind === "local" && activeContext.id === item.id ? "pf-context-chip--active" : ""}`}
-                              onClick={() => setActiveContext({ kind: "local", id: item.id })}
-                            >
-                              <span>{item.label}</span>
-                              <span
-                                className="pf-context-chip__remove"
-                                role="button"
-                                tabIndex={0}
-                                aria-label={`Remove ${item.label}`}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  removeLocalFeature(clusterFocus, item.id);
-                                }}
+                      <button
+                        type="button"
+                        className="pf-context-card__head pf-context-card__head--button"
+                        onClick={() => setCanvasContextOpen((prev) => ({ ...prev, local: !prev.local }))}
+                      >
+                        <span>
+                          Local <span style={visibleClusters.find((cluster) => cluster.id === clusterFocus)?.hex ? { color: visibleClusters.find((cluster) => cluster.id === clusterFocus)?.hex } : undefined}>{clusterLabel(clusterFocus)}</span>
+                        </span>
+                        <span>{canvasContextOpen.local ? "−" : "+"}</span>
+                      </button>
+                      {canvasContextOpen.local && (
+                        <div className="pf-context-card__list">
+                          {(localByCluster[clusterFocus] ?? []).length === 0 ? (
+                            <div className="pf-context-card__empty">Generate features from a decision node.</div>
+                          ) : (
+                            (localByCluster[clusterFocus] ?? []).map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className={`pf-context-chip pf-context-chip--local ${activeContext?.kind === "local" && activeContext.id === item.id ? "pf-context-chip--active" : ""}`}
+                                onClick={() => setActiveContext({ kind: "local", id: item.id })}
                               >
-                                x
-                              </span>
-                            </button>
-                          ))
-                        )}
-                      </div>
+                                <span>{item.label}</span>
+                                <span
+                                  className="pf-context-chip__remove"
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={`Remove ${item.label}`}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    removeLocalFeature(clusterFocus, item.id);
+                                  }}
+                                >
+                                  x
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </section>
                   </div>
                   <PlanCanvas
@@ -1131,6 +1150,7 @@ export default function App() {
                     onPlanTreeSelectionsChange={handlePlanTreeSelectionsChange}
                     onClusterFocusChange={setClusterFocus}
                     showAllClusters={showAllClusters}
+                    onToggleShowAllClusters={() => setShowAllClusters((value) => !value)}
                     savedViewport={savedPlanViewport}
                     onViewportSave={handlePlanViewportSave}
                     onGenerateFeatures={handleGenerateFeatures}
@@ -1155,18 +1175,6 @@ export default function App() {
             )}
           </main>
 
-          <footer className="pf-footer">
-            <div className="pf-footer__assist">{assistantLine}</div>
-            <PromptDock
-              clusterId={clusterFocus}
-              value={prompt}
-              onChange={setPrompt}
-              onSubmit={runMock}
-              contextChip={chip}
-              onAddAttachment={addAttachmentMetadata}
-              disabled={showIntro}
-            />
-          </footer>
         </div>
 
         <div
@@ -1195,8 +1203,14 @@ export default function App() {
           onNavigateCluster={navigateCluster}
           onNavigateDecisionNode={navigateDecisionNode}
           onRenameCluster={openClusterRename}
-          onAddCluster={addGeneratedCluster}
+          onAddCluster={prepareCreateCluster}
           composerPrompt={prompt}
+          onComposerPromptChange={setPrompt}
+          onComposerSubmit={runMock}
+          chatMode={chatMode}
+          onChatModeChange={setChatMode}
+          assistantLine={assistantLine}
+          onMoveNode={submitMoveNode}
           onReorderGlobal={setGlobalFeatures}
           onReorderLocal={(cluster, items) => setLocalByCluster((p) => ({ ...p, [cluster]: items }))}
           activeContext={activeContext}

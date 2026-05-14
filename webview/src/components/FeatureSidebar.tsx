@@ -22,6 +22,8 @@ import type { ClusterId, FeatureItem } from "../types";
 import { CLUSTERS } from "../types";
 import type { DecisionOutlineItem } from "../mock/flows";
 
+type ChatMode = "general" | "node" | "move" | "create";
+
 function rgbaFromHex(hex: string, alpha: number): string {
   const raw = hex.replace("#", "");
   const full = raw.length === 3 ? raw.split("").map((ch) => ch + ch).join("") : raw;
@@ -331,6 +333,12 @@ export function FeatureSidebar({
   onAddCluster,
   clusters,
   composerPrompt,
+  onComposerPromptChange,
+  onComposerSubmit,
+  chatMode,
+  onChatModeChange,
+  assistantLine,
+  onMoveNode,
   onReorderGlobal,
   onReorderLocal,
   activeContext,
@@ -366,6 +374,12 @@ export function FeatureSidebar({
   clusters?: typeof CLUSTERS;
   /** Current composer text — included when searching “prompts”. */
   composerPrompt?: string;
+  onComposerPromptChange?: (value: string) => void;
+  onComposerSubmit?: () => void;
+  chatMode?: ChatMode;
+  onChatModeChange?: (mode: ChatMode) => void;
+  assistantLine?: string;
+  onMoveNode?: (from: { clusterId: ClusterId; nodeId: string }, to: { clusterId: ClusterId; nodeId: string }) => void;
   onReorderGlobal: (items: FeatureItem[]) => void;
   onReorderLocal: (cluster: ClusterId, items: FeatureItem[]) => void;
   activeContext:
@@ -442,6 +456,12 @@ export function FeatureSidebar({
   const [renameDraft, setRenameDraft] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<null | { variant: "global" | "local"; id: string; label: string }>(null);
   const [openLayerIds, setOpenLayerIds] = useState<Set<ClusterId>>(() => new Set([clusterId]));
+  const firstCluster = analyticsClusters[0]?.id ?? clusterId;
+  const firstNode = decisionOutline?.[firstCluster]?.[0]?.nodeId ?? "";
+  const [moveFromCluster, setMoveFromCluster] = useState<ClusterId>(clusterId);
+  const [moveFromNode, setMoveFromNode] = useState(firstNode);
+  const [moveToCluster, setMoveToCluster] = useState<ClusterId>(firstCluster);
+  const [moveToNode, setMoveToNode] = useState(firstNode);
 
   useEffect(() => {
     setOpenLayerIds((prev) => {
@@ -451,6 +471,18 @@ export function FeatureSidebar({
       return next;
     });
   }, [clusterId]);
+
+  useEffect(() => {
+    setMoveFromCluster((prev) => (analyticsClusters.some((cluster) => cluster.id === prev) ? prev : firstCluster));
+    setMoveToCluster((prev) => (analyticsClusters.some((cluster) => cluster.id === prev) ? prev : firstCluster));
+  }, [analyticsClusters, firstCluster]);
+
+  useEffect(() => {
+    const fromNodes = decisionOutline?.[moveFromCluster] ?? [];
+    if (fromNodes.length > 0 && !fromNodes.some((node) => node.nodeId === moveFromNode)) setMoveFromNode(fromNodes[0].nodeId);
+    const toNodes = decisionOutline?.[moveToCluster] ?? [];
+    if (toNodes.length > 0 && !toNodes.some((node) => node.nodeId === moveToNode)) setMoveToNode(toNodes[0].nodeId);
+  }, [decisionOutline, moveFromCluster, moveFromNode, moveToCluster, moveToNode]);
 
   const toggleLayer = (id: ClusterId) => {
     setOpenLayerIds((prev) => {
@@ -676,10 +708,23 @@ export function FeatureSidebar({
           <div className="pf-layer-panel__head">
             <span>Cluster layers</span>
             {onAddCluster && !filterActive ? (
-              <button type="button" className="pf-layer-add" title="Generate a new cluster" aria-label="Generate a new cluster" onClick={onAddCluster}>
+              <button type="button" className="pf-layer-add" title="Create a cluster in chat" aria-label="Create a cluster in chat" onClick={onAddCluster}>
                 +
               </button>
             ) : null}
+          </div>
+          <div className="pf-layer-navigator" aria-label="Cluster navigator">
+            {clustersForAnalytics.map((cl) => (
+              <button
+                key={cl.id}
+                type="button"
+                className={`pf-layer-nav-dot ${cl.id === clusterId ? "pf-layer-nav-dot--active" : ""}`}
+                style={{ background: cl.color }}
+                title={`Navigate to ${cl.label}`}
+                aria-label={`Navigate to ${cl.label}`}
+                onClick={() => onNavigateCluster?.(cl.id)}
+              />
+            ))}
           </div>
           <div className="pf-layer-stack">
             {clustersForAnalytics.length === 0 ? (
@@ -738,6 +783,79 @@ export function FeatureSidebar({
                 );
               })
             )}
+          </div>
+        </section>
+
+        <section className="pf-layer-panel pf-layer-panel--chat" aria-label="Mock assistant chat">
+          <div className="pf-layer-panel__head">Chat</div>
+          <div className="pf-chat-card">
+            <div className="pf-chat-modes" role="tablist" aria-label="Chat mode">
+              {([
+                ["general", "General"],
+                ["node", "Node"],
+                ["move", "Move"],
+                ["create", "Create"],
+              ] as const).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`pf-chat-mode ${chatMode === mode ? "pf-chat-mode--active" : ""}`}
+                  onClick={() => onChatModeChange?.(mode)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {chatMode === "move" && (
+              <div className="pf-move-box" aria-label="Move node controls">
+                <div className="pf-move-row">
+                  <span>From</span>
+                  <select value={moveFromCluster} onChange={(event) => setMoveFromCluster(event.target.value as ClusterId)}>
+                    {analyticsClusters.map((cluster) => (
+                      <option key={cluster.id} value={cluster.id}>{cluster.label}</option>
+                    ))}
+                  </select>
+                  <select value={moveFromNode} onChange={(event) => setMoveFromNode(event.target.value)}>
+                    {(decisionOutline?.[moveFromCluster] ?? []).map((node) => (
+                      <option key={node.nodeId} value={node.nodeId}>{node.title}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="pf-move-row">
+                  <span>To</span>
+                  <select value={moveToCluster} onChange={(event) => setMoveToCluster(event.target.value as ClusterId)}>
+                    {analyticsClusters.map((cluster) => (
+                      <option key={cluster.id} value={cluster.id}>{cluster.label}</option>
+                    ))}
+                  </select>
+                  <select value={moveToNode} onChange={(event) => setMoveToNode(event.target.value)}>
+                    {(decisionOutline?.[moveToCluster] ?? []).map((node) => (
+                      <option key={node.nodeId} value={node.nodeId}>{node.title}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  className="pf-move-apply"
+                  onClick={() => onMoveNode?.({ clusterId: moveFromCluster, nodeId: moveFromNode }, { clusterId: moveToCluster, nodeId: moveToNode })}
+                  disabled={!moveFromNode || !moveToNode}
+                >
+                  Stage move
+                </button>
+              </div>
+            )}
+            <div className="pf-chat-output">{assistantLine ?? "Mock assistant ready."}</div>
+            <div className="pf-chat-input">
+              <textarea
+                value={composerPrompt ?? ""}
+                onChange={(event) => onComposerPromptChange?.(event.target.value)}
+                placeholder={chatMode === "create" ? "Describe the cluster to create..." : chatMode === "move" ? "Describe why this move is needed..." : "Ask a mock follow-up..."}
+                rows={3}
+              />
+              <button type="button" onClick={onComposerSubmit} disabled={!composerPrompt?.trim()}>
+                Send
+              </button>
+            </div>
           </div>
         </section>
 
