@@ -20,6 +20,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import type { ClusterId, FeatureItem } from "../types";
 import { CLUSTERS } from "../types";
+import type { DecisionOutlineItem } from "../mock/flows";
 
 function rgbaFromHex(hex: string, alpha: number): string {
   const raw = hex.replace("#", "");
@@ -318,11 +319,14 @@ export function FeatureSidebar({
   clusterId,
   globalItems,
   localByCluster,
+  decisionOutline,
+  activeNodeId,
   sources,
   programFiles,
   onPickProgramFile,
   onNavigateLocalFeature,
   onNavigateCluster,
+  onNavigateDecisionNode,
   onRenameCluster,
   onAddCluster,
   clusters,
@@ -343,6 +347,8 @@ export function FeatureSidebar({
   clusterId: ClusterId;
   globalItems: FeatureItem[];
   localByCluster: Record<ClusterId, FeatureItem[]>;
+  decisionOutline?: Partial<Record<ClusterId, DecisionOutlineItem[]>>;
+  activeNodeId?: string | null;
   sources: Array<{ id: string; kind: "link" | "document" | "video" | "image"; label: string }>;
   /** Workspace files (Program tab) — searchable from the sidebar. */
   programFiles?: Array<{ id: string; label: string; path: string }>;
@@ -351,6 +357,8 @@ export function FeatureSidebar({
   onNavigateLocalFeature?: (cluster: ClusterId, featureId: string) => void;
   /** Analytics cluster navigator: focus + zoom to a cluster. */
   onNavigateCluster?: (cluster: ClusterId) => void;
+  /** Open a concrete node in the plan and scope the composer to its chat history. */
+  onNavigateDecisionNode?: (cluster: ClusterId, item: DecisionOutlineItem) => void;
   /** Rename the visible label for a cluster. */
   onRenameCluster?: (cluster: ClusterId) => void;
   /** Mock AI: add a generated cluster to the navigator. */
@@ -360,7 +368,10 @@ export function FeatureSidebar({
   composerPrompt?: string;
   onReorderGlobal: (items: FeatureItem[]) => void;
   onReorderLocal: (cluster: ClusterId, items: FeatureItem[]) => void;
-  activeContext: { kind: "global" | "local"; id: string } | null;
+  activeContext:
+    | { kind: "global" | "local"; id: string }
+    | { kind: "node"; id: string; clusterId: ClusterId; label: string }
+    | null;
   onSelectContext: (ctx: { kind: "global" | "local"; id: string }) => void;
   onOpenSource: (attachmentId: string) => void;
   onRemoveSource: (attachmentId: string) => void;
@@ -430,6 +441,25 @@ export function FeatureSidebar({
   const [renameTarget, setRenameTarget] = useState<null | { variant: "global" | "local"; id: string; initialLabel: string }>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<null | { variant: "global" | "local"; id: string; label: string }>(null);
+  const [openLayerIds, setOpenLayerIds] = useState<Set<ClusterId>>(() => new Set([clusterId]));
+
+  useEffect(() => {
+    setOpenLayerIds((prev) => {
+      if (prev.has(clusterId)) return prev;
+      const next = new Set(prev);
+      next.add(clusterId);
+      return next;
+    });
+  }, [clusterId]);
+
+  const toggleLayer = (id: ClusterId) => {
+    setOpenLayerIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (renameTarget) setRenameDraft(renameTarget.initialLabel);
@@ -641,211 +671,108 @@ export function FeatureSidebar({
           </div>
         )}
       </div>
-      <PanelGroup id="promptful-feature-panels" autoSaveId="promptful-features-v3" direction="vertical" className="pf-side-panels">
-        <Panel defaultSize={30} minSize={12} className="pf-side-panel pf-side-panel--top">
-          <div className="pf-side-scroll">
-            <div className="pf-side__head">Global</div>
-            {filterActive ? (
-              <div className="pf-side__list">
-                {globalFiltered.length === 0 ? (
-                  <div className="pf-side__empty">{contextSearch.trim() ? "No matches" : "—"}</div>
-                ) : (
-                  globalFiltered.map((item) => (
-                    <StaticFeatRow
-                      key={item.id}
-                      item={item}
-                      variant="global"
-                      active={activeContext?.kind === "global" && activeContext.id === item.id}
-                      onPick={() => onSelectContext({ kind: "global", id: item.id })}
-                      onOpenRenameModal={() => setRenameTarget({ variant: "global", id: item.id, initialLabel: item.label })}
-                      onOpenDeleteConfirm={() => setDeleteTarget({ variant: "global", id: item.id, label: item.label })}
-                    />
-                  ))
-                )}
-              </div>
+      <div className="pf-side-layers">
+        <section className="pf-layer-panel pf-layer-panel--clusters" aria-label="Cluster navigator">
+          <div className="pf-layer-panel__head">
+            <span>Cluster layers</span>
+            {onAddCluster && !filterActive ? (
+              <button type="button" className="pf-layer-add" title="Generate a new cluster" aria-label="Generate a new cluster" onClick={onAddCluster}>
+                +
+              </button>
+            ) : null}
+          </div>
+          <div className="pf-layer-stack">
+            {clustersForAnalytics.length === 0 ? (
+              <div className="pf-side__empty">{filterActive ? "No cluster matches" : "No clusters"}</div>
             ) : (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEndGlobal}>
-                <SortableContext items={globalItems.map((g) => g.id)} strategy={verticalListSortingStrategy}>
-                  <div className="pf-side__list">
-                    {globalItems.length === 0 ? (
-                      <div className="pf-side__empty">No global features yet.</div>
-                    ) : (
-                      globalItems.map((item) => (
-                        <SortableRow
-                          key={item.id}
-                          item={item}
-                          variant="global"
-                          active={activeContext?.kind === "global" && activeContext.id === item.id}
-                          onPick={() => onSelectContext({ kind: "global", id: item.id })}
-                          onOpenRenameModal={() => setRenameTarget({ variant: "global", id: item.id, initialLabel: item.label })}
-                          onOpenDeleteConfirm={() => setDeleteTarget({ variant: "global", id: item.id, label: item.label })}
-                        />
-                      ))
-                    )}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            )}
-          </div>
-        </Panel>
-
-        <PanelResizeHandle className="pf-side-resizer" aria-label="Resize Global / Local">
-
-          <div className="pf-side-resizer__line" />
-        </PanelResizeHandle>
-
-        <Panel defaultSize={38} minSize={16} className="pf-side-panel pf-side-panel--middle">
-          <div
-            className="pf-side-scroll"
-            style={c?.hex ? { borderLeft: `3px solid ${c.hex}40`, paddingLeft: 8 } : undefined}
-          >
-            <div className="pf-side__head pf-side__head--local">
-              Local ·{" "}
-              <span className="pf-side__cluster" style={c?.hex ? { color: c.hex } : undefined}>
-                {c?.label}
-              </span>
-            </div>
-            {filterActive ? (
-              <div className="pf-side__list">
-                {localFiltered.length === 0 ? (
-                  <div className="pf-side__empty">{contextSearch.trim() ? "No matches" : "—"}</div>
-                ) : (
-                  localFiltered.map((item) => (
-                    <StaticFeatRow
-                      key={item.id}
-                      item={item}
-                      variant="local"
-                      active={activeContext?.kind === "local" && activeContext.id === item.id}
-                      onPick={() => onSelectContext({ kind: "local", id: item.id })}
-                      onOpenRenameModal={() => setRenameTarget({ variant: "local", id: item.id, initialLabel: item.label })}
-                      onOpenDeleteConfirm={() => setDeleteTarget({ variant: "local", id: item.id, label: item.label })}
-                      localSurface={localSurface}
-                    />
-                  ))
-                )}
-              </div>
-            ) : (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEndLocal}>
-                <SortableContext items={localItems.map((g) => g.id)} strategy={verticalListSortingStrategy}>
-                  <div className="pf-side__list">
-                    {localItems.length === 0 ? (
-                      <div className="pf-side__empty">Generate features from a decision node.</div>
-                    ) : (
-                      localItems.map((item) => (
-                        <SortableRow
-                          key={item.id}
-                          item={item}
-                          variant="local"
-                          active={activeContext?.kind === "local" && activeContext.id === item.id}
-                          onPick={() => onSelectContext({ kind: "local", id: item.id })}
-                          onOpenRenameModal={() => setRenameTarget({ variant: "local", id: item.id, initialLabel: item.label })}
-                          onOpenDeleteConfirm={() => setDeleteTarget({ variant: "local", id: item.id, label: item.label })}
-                          localSurface={localSurface}
-                        />
-                      ))
-                    )}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            )}
-          </div>
-        </Panel>
-
-        <PanelResizeHandle className="pf-side-resizer" aria-label="Resize Local / Source">
-
-          <div className="pf-side-resizer__line" />
-        </PanelResizeHandle>
-
-        <Panel defaultSize={16} minSize={10} className="pf-side-panel pf-side-panel--source">
-          <div className="pf-side-scroll">
-            <div className="pf-side__head">Source</div>
-            <div className="pf-source-list">
-              {!filterActive && sources.length === 0 ? (
-                <div className="pf-source-empty">No resources yet.</div>
-              ) : filterActive && sourcesFiltered.length === 0 ? (
-                <div className="pf-source-empty">No matches</div>
-              ) : (
-                (filterActive ? sourcesFiltered : sources).map((s) => (
-                  <div key={s.id} className="pf-source-item" title={s.label}>
-                    <button
-                      type="button"
-                      className="pf-source-item__hit"
-                      onClick={() => onOpenSource(s.id)}
-                      aria-label={`Open source ${s.label}`}
-                    >
-                      <span className="pf-source-item__kind">{s.kind.toUpperCase()}</span>
-                      <span className="pf-source-item__label">{s.label}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="pf-source-item__remove"
-                      aria-label={`Remove ${s.label}`}
-                      title="Remove from sources"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRemoveSource(s.id);
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </Panel>
-
-        <PanelResizeHandle className="pf-side-resizer" aria-label="Resize Source / Cluster navigator">
-          <div className="pf-side-resizer__line" />
-        </PanelResizeHandle>
-
-        <Panel defaultSize={16} minSize={8} className="pf-side-panel pf-side-panel--analytics">
-          <div className="pf-side-scroll pf-side-scroll--analytics">
-            <div className="pf-side__head">Cluster navigator</div>
-            <div className="pf-cluster-dots">
-              {clustersForAnalytics.length === 0 ? (
-                <span className="pf-side__empty pf-side__empty--inline">{filterActive ? "No cluster matches" : "—"}</span>
-              ) : (
-                clustersForAnalytics.map((cl) => (
-                  <span key={cl.id} className="pf-cluster-dots__item">
-                    <button
-                      type="button"
-                      className={`pf-cluster-dots__dot ${cl.id === clusterId ? "pf-cluster-dots__dot--active" : ""}`}
-                      style={{ background: cl.color }}
-                      title={`Navigate to ${cl.label}. Double-click to rename.`}
-                      aria-label={`Navigate to ${cl.label}`}
-                      onClick={() => onNavigateCluster?.(cl.id)}
-                      onDoubleClick={() => onRenameCluster?.(cl.id)}
-                    />
-                    {onRenameCluster ? (
+              clustersForAnalytics.map((cl) => {
+                const nodes = (decisionOutline?.[cl.id] ?? []).filter((item) =>
+                  filterActive ? matchesQuery(queryNorm, item.title) || matchesQuery(queryNorm, item.summary) || matchesQuery(queryNorm, cl.label) : true
+                );
+                const open = openLayerIds.has(cl.id);
+                return (
+                  <div key={cl.id} className={`pf-layer ${cl.id === clusterId ? "pf-layer--active" : ""}`}>
+                    <div className="pf-layer__row">
+                      <button type="button" className="pf-layer__fold" aria-label={open ? `Collapse ${cl.label}` : `Expand ${cl.label}`} onClick={() => toggleLayer(cl.id)}>
+                        {open ? "⌄" : "›"}
+                      </button>
                       <button
                         type="button"
-                        className="pf-cluster-dots__rename"
-                        title={`Rename ${cl.label}`}
-                        aria-label={`Rename ${cl.label}`}
-                        onClick={() => onRenameCluster(cl.id)}
+                        className="pf-layer__main"
+                        onClick={() => {
+                          onNavigateCluster?.(cl.id);
+                          setOpenLayerIds((prev) => new Set(prev).add(cl.id));
+                        }}
                       >
-                        ✎
+                        <span className="pf-layer__dot" style={{ background: cl.color }} />
+                        <span className="pf-layer__label">{cl.label}</span>
                       </button>
-                    ) : null}
-                  </span>
-                ))
-              )}
-              {onAddCluster && !filterActive ? (
-                <button
-                  type="button"
-                  className="pf-cluster-dots__add"
-                  title="Generate a new cluster"
-                  aria-label="Generate a new cluster"
-                  onClick={onAddCluster}
-                >
-                  +
-                </button>
-              ) : null}
-            </div>
+                      {onRenameCluster ? (
+                        <button type="button" className="pf-layer__edit" title={`Rename ${cl.label}`} aria-label={`Rename ${cl.label}`} onClick={() => onRenameCluster(cl.id)}>
+                          ✎
+                        </button>
+                      ) : null}
+                    </div>
+                    {open && (
+                      <div className="pf-layer__children">
+                        {nodes.length === 0 ? (
+                          <div className="pf-layer__empty">No matching nodes</div>
+                        ) : (
+                          nodes.map((item) => (
+                            <button
+                              key={item.nodeId}
+                              type="button"
+                              className={`pf-layer-node ${activeNodeId === item.nodeId ? "pf-layer-node--active" : ""}`}
+                              style={{ paddingLeft: 12 + item.depth * 12 }}
+                              title={item.summary}
+                              onClick={() => onNavigateDecisionNode?.(cl.id, item)}
+                            >
+                              <span className="pf-layer-node__name">{item.title}</span>
+                              <span className="pf-layer-node__meta">{item.depth === 0 ? "root" : "node"}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
-        </Panel>
-      </PanelGroup>
+        </section>
+
+        <section className="pf-layer-panel pf-layer-panel--source" aria-label="Sources">
+          <div className="pf-layer-panel__head">Source</div>
+          <div className="pf-source-list">
+            {!filterActive && sources.length === 0 ? (
+              <div className="pf-source-empty">No resources yet.</div>
+            ) : filterActive && sourcesFiltered.length === 0 ? (
+              <div className="pf-source-empty">No matches</div>
+            ) : (
+              (filterActive ? sourcesFiltered : sources).map((s) => (
+                <div key={s.id} className="pf-source-item" title={s.label}>
+                  <button type="button" className="pf-source-item__hit" onClick={() => onOpenSource(s.id)} aria-label={`Open source ${s.label}`}>
+                    <span className="pf-source-item__kind">{s.kind.toUpperCase()}</span>
+                    <span className="pf-source-item__label">{s.label}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="pf-source-item__remove"
+                    aria-label={`Remove ${s.label}`}
+                    title="Remove from sources"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemoveSource(s.id);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
     </aside>
     </>
   );

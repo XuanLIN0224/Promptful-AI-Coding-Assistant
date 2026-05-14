@@ -10,7 +10,8 @@ import { ProgramPane } from "./components/ProgramPane";
 import { PromptDock } from "./components/PromptDock";
 import { assistantLineForProgramTab } from "./assistantLine";
 import { mimicAi } from "./mimicAi";
-import type { PlanTreeKind } from "./mock/flows";
+import type { DecisionOutlineItem, PlanTreeKind } from "./mock/flows";
+import { decisionOutlineForCluster } from "./mock/flows";
 import { canonicalProgramTabId, clusterForProgramEditorTab, PROGRAM_EDITOR_TABS } from "./programTabs";
 import "./app.css";
 
@@ -183,7 +184,11 @@ export default function App() {
   const [clusterLabelOverrides, setClusterLabelOverrides] = useState<Partial<Record<ClusterId, string>>>({});
   const [clusterRenameDraft, setClusterRenameDraft] = useState<null | { id: ClusterId; label: string }>(null);
   const [planApplied, setPlanApplied] = useState(false);
-  const [activeContext, setActiveContext] = useState<{ kind: "global" | "local"; id: string } | null>(null);
+  const [activeContext, setActiveContext] = useState<
+    | { kind: "global" | "local"; id: string }
+    | { kind: "node"; id: string; clusterId: ClusterId; label: string }
+    | null
+  >(null);
   const [scopeLabel, setScopeLabel] = useState<string | null>("Terminus");
   const [prompt, setPrompt] = useState("");
   const [attachments, setAttachments] = useState<IntroAttachment[]>([]);
@@ -211,6 +216,13 @@ export default function App() {
   const clusterLabel = useCallback(
     (cluster: ClusterId) => clusterLabelOverrides[cluster]?.trim() || CLUSTERS.find((c) => c.id === cluster)?.label || "Cluster",
     [clusterLabelOverrides]
+  );
+  const decisionOutline = useMemo(
+    () =>
+      Object.fromEntries(
+        visibleClusterIds.map((kind) => [kind, decisionOutlineForCluster(kind)])
+      ) as Partial<Record<ClusterId, DecisionOutlineItem[]>>,
+    [visibleClusterIds]
   );
 
   const completedClusterCount = completedClusterIds.size;
@@ -417,6 +429,7 @@ export default function App() {
 
   const chip = useMemo(() => {
     if (activeContext) {
+      if (activeContext.kind === "node") return `Node - ${activeContext.label}`;
       const list = activeContext.kind === "global" ? globalFeatures : localByCluster[clusterFocus];
       const f = list.find((x) => x.id === activeContext.id);
       if (f) return `${activeContext.kind === "global" ? "Global" : "Local"} - ${f.label}`;
@@ -428,6 +441,11 @@ export default function App() {
   const consumePromptForMock = useCallback(() => {
     const text = prompt.trim();
     if (!text) return false;
+    if (activeContext?.kind === "node") {
+      setAssistantLine(`Expanded the ${activeContext.label} decision thread with a mock follow-up.`);
+      setPrompt("");
+      return true;
+    }
     const out = mimicAi(text, clusterFocus);
     setAssistantLine(out.assistantLine);
     if (out.newLocalLabel) {
@@ -439,11 +457,7 @@ export default function App() {
     }
     setPrompt("");
     return true;
-  }, [clusterFocus, prompt]);
-
-  const runMock = useCallback(() => {
-    consumePromptForMock();
-  }, [consumePromptForMock]);
+  }, [activeContext, clusterFocus, prompt]);
 
   const handleGenerateFeatures = useCallback((request: GeneratedFeatureRequest) => {
     const featureId = `feat-${request.target}-${request.nodeId}`;
@@ -528,7 +542,7 @@ export default function App() {
   }, []);
 
   const applyPlan = useCallback(() => {
-    if (completedClusterIds.size < CLUSTERS.length || planApplied) return;
+    if (completedClusterIds.size < visibleClusterIds.length || planApplied) return;
     WEBVIEW_VSCODE?.postMessage({
       type: "promptful/applyPlan",
       files: PROGRAM_EDITOR_TABS.map(({ path, code }) => ({ path, content: code })),
@@ -539,7 +553,7 @@ export default function App() {
     setShowIntro(false);
     setTab("program");
     setAssistantLine("Plan applied. Starter files have been generated from the confirmed clusters.");
-  }, [completedClusterIds.size, planApplied]);
+  }, [completedClusterIds.size, planApplied, visibleClusterIds.length]);
 
   const sendFromIntro = useCallback(() => {
     if (!consumePromptForMock()) return;
@@ -717,6 +731,11 @@ export default function App() {
     setShowAllClusters(false);
     setPlanExplorerTabId(programTabForCluster(cluster));
     setTab("plan");
+    const rootNode = decisionOutlineForCluster(cluster)[0];
+    if (rootNode) {
+      setActiveContext({ kind: "node", id: rootNode.nodeId, clusterId: cluster, label: rootNode.title });
+      setScopeLabel(rootNode.title);
+    }
   }, []);
 
   const navigateProgramDecision = useCallback((cluster: ClusterId, nodeId: string) => {
@@ -729,6 +748,19 @@ export default function App() {
     setPlanTreeSelections((prev) => ({ ...prev, [cluster]: nodeId }));
     setAssistantLine(`Showing the linked ${clusterLabel(cluster)} decision in Plan.`);
   }, [clusterLabel]);
+
+  const navigateDecisionNode = useCallback((cluster: ClusterId, item: DecisionOutlineItem) => {
+    setShowIntro(false);
+    setTab("plan");
+    setPlanMode("overview");
+    setClusterFocus(cluster);
+    setShowAllClusters(false);
+    setPlanExplorerTabId(programTabForCluster(cluster));
+    setPlanTreeSelections((prev) => ({ ...prev, [cluster]: item.nodeId }));
+    setActiveContext({ kind: "node", id: item.nodeId, clusterId: cluster, label: item.title });
+    setScopeLabel(item.title);
+    setAssistantLine(`Opened chat history for ${item.title}.`);
+  }, []);
 
   const addGeneratedCluster = useCallback(() => {
     const nextCluster = GENERATED_CLUSTER_IDS.find((id) => !generatedClusterIds.includes(id));
@@ -743,8 +775,26 @@ export default function App() {
     setClusterFocus(nextCluster);
     setShowAllClusters(false);
     setPlanExplorerTabId(programTabForCluster(nextCluster));
+    const rootNode = decisionOutlineForCluster(nextCluster)[0];
+    if (rootNode) {
+      setPlanTreeSelections((prev) => ({ ...prev, [nextCluster]: rootNode.nodeId }));
+      setActiveContext({ kind: "node", id: rootNode.nodeId, clusterId: nextCluster, label: rootNode.title });
+      setScopeLabel(rootNode.title);
+    }
     setAssistantLine(`Mock AI generated ${clusterLabel(nextCluster)} with editable decision nodes.`);
   }, [clusterLabel, generatedClusterIds]);
+
+  const runMock = useCallback(() => {
+    const text = prompt.trim();
+    if (!text) return;
+    if (activeContext?.kind === "node") {
+      setAssistantLine(`Expanded the ${activeContext.label} decision thread with a mock follow-up.`);
+      setPrompt("");
+      return;
+    }
+    addGeneratedCluster();
+    setPrompt("");
+  }, [activeContext, addGeneratedCluster, prompt]);
 
   const openClusterRename = useCallback((cluster: ClusterId) => {
     setClusterRenameDraft({ id: cluster, label: clusterLabel(cluster) });
@@ -1004,6 +1054,72 @@ export default function App() {
                       </span>
                     ))}
                   </div>
+                  <div className="pf-canvas-context" onMouseDown={(event) => event.stopPropagation()}>
+                    <section className="pf-context-card pf-context-card--global" aria-label="Global features">
+                      <div className="pf-context-card__head">Global</div>
+                      <div className="pf-context-card__list">
+                        {globalFeatures.length === 0 ? (
+                          <div className="pf-context-card__empty">No global features yet.</div>
+                        ) : (
+                          globalFeatures.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className={`pf-context-chip ${activeContext?.kind === "global" && activeContext.id === item.id ? "pf-context-chip--active" : ""}`}
+                              onClick={() => setActiveContext({ kind: "global", id: item.id })}
+                            >
+                              <span>{item.label}</span>
+                              <span
+                                className="pf-context-chip__remove"
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`Remove ${item.label}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  removeGlobalFeature(item.id);
+                                }}
+                              >
+                                x
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </section>
+                    <section className="pf-context-card pf-context-card--local" aria-label="Local features">
+                      <div className="pf-context-card__head">
+                        Local <span style={visibleClusters.find((cluster) => cluster.id === clusterFocus)?.hex ? { color: visibleClusters.find((cluster) => cluster.id === clusterFocus)?.hex } : undefined}>{clusterLabel(clusterFocus)}</span>
+                      </div>
+                      <div className="pf-context-card__list">
+                        {(localByCluster[clusterFocus] ?? []).length === 0 ? (
+                          <div className="pf-context-card__empty">Generate features from a decision node.</div>
+                        ) : (
+                          (localByCluster[clusterFocus] ?? []).map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className={`pf-context-chip pf-context-chip--local ${activeContext?.kind === "local" && activeContext.id === item.id ? "pf-context-chip--active" : ""}`}
+                              onClick={() => setActiveContext({ kind: "local", id: item.id })}
+                            >
+                              <span>{item.label}</span>
+                              <span
+                                className="pf-context-chip__remove"
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`Remove ${item.label}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  removeLocalFeature(clusterFocus, item.id);
+                                }}
+                              >
+                                x
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </section>
+                  </div>
                   <PlanCanvas
                     mode={planMode}
                     planExplorerTabId={planExplorerTabId}
@@ -1070,11 +1186,14 @@ export default function App() {
           globalItems={globalFeatures}
           localByCluster={localByCluster}
           clusters={visibleClusters}
+          decisionOutline={decisionOutline}
+          activeNodeId={activeContext?.kind === "node" ? activeContext.id : null}
           sources={sourceItems}
           programFiles={programFileItems}
           onPickProgramFile={pickProgramFileFromSidebar}
           onNavigateLocalFeature={navigateLocalFeature}
           onNavigateCluster={navigateCluster}
+          onNavigateDecisionNode={navigateDecisionNode}
           onRenameCluster={openClusterRename}
           onAddCluster={addGeneratedCluster}
           composerPrompt={prompt}

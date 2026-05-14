@@ -680,6 +680,49 @@ function treeNodesAndEdges(kind: PlanTreeKind): { nodes: Node<DecisionNodePayloa
   }
 }
 
+export type DecisionOutlineItem = {
+  clusterId: ClusterId;
+  nodeId: string;
+  title: string;
+  summary: string;
+  depth: number;
+};
+
+export function decisionOutlineForCluster(kind: PlanTreeKind): DecisionOutlineItem[] {
+  const { nodes, edges } = treeNodesAndEdges(kind);
+  const children = new Map<string, string[]>();
+  const hasParent = new Set<string>();
+  for (const edge of edges) {
+    const source = String(edge.source);
+    const target = String(edge.target);
+    children.set(source, [...(children.get(source) ?? []), target]);
+    hasParent.add(target);
+  }
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const roots = nodes.filter((node) => !hasParent.has(node.id));
+  const ordered: DecisionOutlineItem[] = [];
+  const seen = new Set<string>();
+
+  const visit = (nodeId: string, depth: number) => {
+    if (seen.has(nodeId)) return;
+    const node = byId.get(nodeId);
+    if (!node) return;
+    seen.add(nodeId);
+    ordered.push({
+      clusterId: node.data.clusterId,
+      nodeId,
+      title: node.data.title,
+      summary: node.data.summary,
+      depth,
+    });
+    for (const child of children.get(nodeId) ?? []) visit(child, depth + 1);
+  };
+
+  for (const root of roots) visit(root.id, 0);
+  for (const node of nodes) visit(node.id, 0);
+  return ordered;
+}
+
 export function decisionHudSlotsForProgramTab(programTabId: string): Array<{
   nodeId: string;
   clusterId: ClusterId;
