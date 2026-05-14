@@ -39,6 +39,7 @@ import {
   nodesArgForClusterFit,
   planKindFromClusterFrameId,
   PLAN_CLUSTER_TREE_ROOT_IDS,
+  type DecisionOutlineItem,
   type PlanTreeKind,
 } from "../mock/flows";
 import {
@@ -121,7 +122,54 @@ function descendantIdsForRoots(edges: readonly Edge[], rootIds: Iterable<string>
 
 function nodeKind(node: Node): PlanTreeKind | null {
   if (node.type === "clusterFrame") return planKindFromClusterFrameId(node.id);
-  return kindFromNodeId(node.id);
+  const fromId = kindFromNodeId(node.id);
+  if (fromId) return fromId;
+  const data = node.data as Partial<DecisionNodePayload>;
+  return data.clusterId ?? null;
+}
+
+function contentBoundsForKind(nodes: readonly Node[], kind: PlanTreeKind): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  const content = nodes.filter((node) => node.type === "decision" || node.type === "branch").filter((node) => nodeKind(node) === kind);
+  if (content.length === 0) return null;
+  return content.reduce(
+    (acc, node) => {
+      const width = Number((node.style as { width?: number } | undefined)?.width ?? node.width ?? 220);
+      const height = Number((node.style as { height?: number } | undefined)?.height ?? node.height ?? 112);
+      return {
+        minX: Math.min(acc.minX, node.position.x),
+        minY: Math.min(acc.minY, node.position.y),
+        maxX: Math.max(acc.maxX, node.position.x + width),
+        maxY: Math.max(acc.maxY, node.position.y + height),
+      };
+    },
+    { minX: Number.POSITIVE_INFINITY, minY: Number.POSITIVE_INFINITY, maxX: Number.NEGATIVE_INFINITY, maxY: Number.NEGATIVE_INFINITY }
+  );
+}
+
+function appendMovedRootNodes(base: { nodes: Node[]; edges: Edge[] }, movedRootNodes: Partial<Record<ClusterId, DecisionOutlineItem[]>>): { nodes: Node[]; edges: Edge[] } {
+  const extra: Node<DecisionNodePayload>[] = [];
+  for (const [kind, movedNodes] of Object.entries(movedRootNodes) as [PlanTreeKind, DecisionOutlineItem[]][]) {
+    const bounds = contentBoundsForKind([...base.nodes, ...extra], kind);
+    const startX = bounds ? bounds.minX : 120;
+    const startY = bounds ? bounds.maxY + 96 : 120;
+    movedNodes.forEach((item, index) => {
+      extra.push({
+        id: item.nodeId,
+        type: "decision",
+        position: { x: startX + index * 292, y: startY + index * 22 },
+        data: {
+          title: item.title,
+          summary: item.summary,
+          clusterId: kind,
+          planSourceTabId: "security-ts",
+          sources: [{ id: `s-${item.nodeId}-move`, label: "Moved node query", kind: "prompt" }],
+        },
+        draggable: true,
+        zIndex: 1,
+      });
+    });
+  }
+  return extra.length > 0 ? { nodes: [...base.nodes, ...extra], edges: base.edges } : base;
 }
 
 function fileGraphPack(): { nodes: Node[]; edges: Edge[] } {
@@ -156,6 +204,8 @@ function Inner({
   onFlowReady,
   onGenerateFeatures,
   generatedFeatureNodeIds,
+  movedRootNodes,
+  chatPromptCounts,
   onClusterComplete,
   onTreeUndoNode,
   onTreeNodesCollapsed,
@@ -176,13 +226,15 @@ function Inner({
   onFlowReady?: (instance: ReactFlowInstance | null) => void;
   onGenerateFeatures: (request: GeneratedFeatureRequest) => void;
   generatedFeatureNodeIds: ReadonlySet<string>;
+  movedRootNodes: Partial<Record<ClusterId, DecisionOutlineItem[]>>;
+  chatPromptCounts: Record<string, number>;
   onClusterComplete: (kind: PlanTreeKind) => void;
   onTreeUndoNode: (nodeId: string, kind: PlanTreeKind) => void;
   onTreeNodesCollapsed: (nodeIds: string[], kind: PlanTreeKind) => void;
 }) {
   const isOverview = mode === "overview";
   const isGraph = mode === "nodegraph";
-  const overviewPack = useMemo(() => clusterOverviewPack(enabledClusterIds), [enabledClusterIds]);
+  const overviewPack = useMemo(() => appendMovedRootNodes(clusterOverviewPack(enabledClusterIds), movedRootNodes), [enabledClusterIds, movedRootNodes]);
   const enabledClusterSet = useMemo(() => new Set(enabledClusterIds), [enabledClusterIds]);
   const graphPack = useMemo(() => fileGraphPack(), []);
   const allTreeParents = useMemo(() => parentIdsFromEdges(overviewPack.edges), [overviewPack.edges]);
@@ -400,7 +452,41 @@ function Inner({
       if (n.type !== "decision" && n.type !== "branch") return { ...n, hidden };
 
       const treeKind = kindFromNodeId(n.id);
-      if (!treeKind) return { ...n, hidden };
+      if (!treeKind) {
+        const fallbackKind = (n.data as Partial<DecisionNodePayload>).clusterId;
+        if (!fallbackKind) return { ...n, hidden };
+        const d = n.data as {
+          title: string;
+          summary: string;
+          clusterId: GeneratedFeatureRequest["clusterId"];
+        };
+        return {
+          ...n,
+          hidden,
+          zIndex: 1,
+          data: {
+            ...(n.data as object),
+            ...(nodeTextEdits[n.id] ?? {}),
+            treeCommitted: false,
+            treeHoverPath: false,
+            treePathHover: treeHoverId === n.id,
+            treeShowUndo: false,
+            treeCanToggleChildren: false,
+            treeChildrenExpanded: true,
+            featuresGenerated: generatedFeatureNodeIds.has(n.id),
+            chatPromptCount: chatPromptCounts[n.id] ?? 0,
+            onEditNode: handleTreeEditNode,
+            onGenerateFeatures: (_nodeId: string, target: "global" | "local") =>
+              onGenerateFeatures({
+                nodeId: n.id,
+                title: d.title,
+                summary: d.summary,
+                clusterId: d.clusterId,
+                target,
+              }),
+          },
+        };
+      }
       const leaf = planTreeSelections[treeKind] ?? null;
       const parentOverride = treeParentChoiceByKind[treeKind];
       const committedSet = leaf ? new Set(pathNodeIdsFromRootResolved(leaf, incomingParents, parentOverride)) : null;
@@ -434,6 +520,7 @@ function Inner({
           treeChildrenExpanded: !collapsedTreeNodeIds.has(n.id),
           onTreeToggleChildren: handleTreeToggleChildren,
           featuresGenerated: generatedFeatureNodeIds.has(n.id),
+          chatPromptCount: chatPromptCounts[n.id] ?? 0,
           onEditNode: handleTreeEditNode,
           onGenerateFeatures: (_nodeId: string, target: "global" | "local") =>
             onGenerateFeatures({
@@ -505,6 +592,7 @@ function Inner({
     handleTreeToggleChildren,
     handleTreeEditNode,
     generatedFeatureNodeIds,
+    chatPromptCounts,
     nodeTextEdits,
     onGenerateFeatures,
   ]);
@@ -572,7 +660,7 @@ function Inner({
         return;
       }
       if (!isOverview || (node.type !== "decision" && node.type !== "branch")) return;
-      const kind = kindFromNodeId(node.id);
+      const kind = kindFromNodeId(node.id) ?? (node.data as Partial<DecisionNodePayload>).clusterId;
       if (!kind) return;
       const childCount = (childrenByParent(edges).get(node.id) ?? []).length;
       const isTerminal = childCount === 0 || Boolean((node.data as { confirmed?: boolean }).confirmed);
@@ -615,10 +703,12 @@ function Inner({
         if (collapsedDescendants.length > 0) onTreeNodesCollapsed(collapsedDescendants, kind);
         return next;
       });
-      onPlanTreeSelectionsChange((prev) => ({ ...prev, [kind]: node.id }));
-      if (isTerminal) onClusterComplete(kind);
-      if (["co-equal", "co-cents", "co-percent", "co-settle"].includes(node.id)) onClusterComplete("core");
-      if (["gr-household", "gr-invite", "gr-balances"].includes(node.id)) onClusterComplete("groups");
+      if (!node.id.includes("-moved-")) {
+        onPlanTreeSelectionsChange((prev) => ({ ...prev, [kind]: node.id }));
+        if (isTerminal) onClusterComplete(kind);
+        if (["co-equal", "co-cents", "co-percent", "co-settle"].includes(node.id)) onClusterComplete("core");
+        if (["gr-household", "gr-invite", "gr-balances"].includes(node.id)) onClusterComplete("groups");
+      }
       requestAnimationFrame(() => requestAnimationFrame(() => fitCurrentView(320)));
     },
     [
@@ -803,6 +893,8 @@ export function PlanCanvas({
   onFlowReady,
   onGenerateFeatures,
   generatedFeatureNodeIds,
+  movedRootNodes,
+  chatPromptCounts,
   onClusterComplete,
   onTreeUndoNode,
   onTreeNodesCollapsed,
@@ -823,6 +915,8 @@ export function PlanCanvas({
   onFlowReady?: (instance: ReactFlowInstance | null) => void;
   onGenerateFeatures: (request: GeneratedFeatureRequest) => void;
   generatedFeatureNodeIds: ReadonlySet<string>;
+  movedRootNodes: Partial<Record<ClusterId, DecisionOutlineItem[]>>;
+  chatPromptCounts: Record<string, number>;
   onClusterComplete: (kind: PlanTreeKind) => void;
   onTreeUndoNode: (nodeId: string, kind: PlanTreeKind) => void;
   onTreeNodesCollapsed: (nodeIds: string[], kind: PlanTreeKind) => void;
@@ -849,6 +943,8 @@ export function PlanCanvas({
             onFlowReady={onFlowReady}
             onGenerateFeatures={onGenerateFeatures}
             generatedFeatureNodeIds={generatedFeatureNodeIds}
+            movedRootNodes={movedRootNodes}
+            chatPromptCounts={chatPromptCounts}
             onClusterComplete={onClusterComplete}
             onTreeUndoNode={onTreeUndoNode}
             onTreeNodesCollapsed={onTreeNodesCollapsed}

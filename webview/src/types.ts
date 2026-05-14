@@ -108,6 +108,8 @@ export interface DecisionNodePayload {
   onGenerateFeatures?: (nodeId: string, target: "global" | "local") => void;
   /** Mock editing affordance for the decision tree content */
   onEditNode?: (nodeId: string) => void;
+  /** Count of participant prompts attached to this node's chat history */
+  chatPromptCount?: number;
 }
 
 export interface FileGraphPayload {

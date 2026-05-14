@@ -172,6 +172,50 @@ function featureIdsForNode(nodeId: string): string[] {
   return [`feat-local-${nodeId}`, `feat-global-${nodeId}`];
 }
 
+function nodePrefixForCluster(cluster: ClusterId): string {
+  if (cluster === "core") return "co";
+  if (cluster === "account") return "ua";
+  if (cluster === "groups") return "gr";
+  if (cluster === "budgeting") return "bu";
+  if (cluster === "security") return "se";
+  if (cluster === "compliance") return "cm";
+  return cluster;
+}
+
+function nodePromptReply(text: string, label: string, cluster: string, turn: number): string {
+  const lower = text.toLowerCase();
+  if (lower.includes("why") || lower.includes("because")) {
+    return `For ${label}, I would treat that as a rationale check: the ${cluster} decision should explain why this branch is stronger than its sibling, then keep the rejected option visible for traceability.`;
+  }
+  if (lower.includes("risk") || lower.includes("issue") || lower.includes("problem")) {
+    return `I see a risk thread in ${label}: mark the assumption, connect it to the affected feature, and ask one yes/no decision before writing code so the participant has a clear control point.`;
+  }
+  if (lower.includes("file") || lower.includes("code") || lower.includes("implement")) {
+    return `For implementation, ${label} should map to one starter file plus a highlighted decision marker. I would keep the generated code small until this node is confirmed.`;
+  }
+  if (turn % 3 === 1) {
+    return `${label} now has a follow-up decision: keep the current path, or split it into a separate branch if the participant thinks it affects another cluster. Confidence is highest for keeping it local first.`;
+  }
+  if (turn % 3 === 2) {
+    return `I would summarise this as a traceability update for ${label}: source prompt, assumption, and affected feature are now linked so the participant can revisit the reasoning later.`;
+  }
+  return `For ${label}, the next useful move is to ask whether this should stay local to ${cluster} or be escalated globally. I would present that as a two-option decision with confidence ratings.`;
+}
+
+function generalPromptReply(text: string): string {
+  const lower = text.toLowerCase();
+  if (lower.includes("security") || lower.includes("privacy")) {
+    return "Mock reply: this should probably become a dedicated Security decision cluster, with access control, audit trail, and data protection separated from budgeting features.";
+  }
+  if (lower.includes("budget") || lower.includes("split")) {
+    return "Mock reply: I would separate cost splitting from monthly budgeting, then connect them later through generated file impacts rather than merging the concepts too early.";
+  }
+  if (lower.includes("cluster")) {
+    return "Mock reply: I would first name the cluster, then create one root decision and two competing branches so the participant can inspect the trade-off.";
+  }
+  return "Mock reply: I would compare this prompt against prior decisions, identify whether it is local or global, then offer one high-confidence next step and one lower-confidence alternative.";
+}
+
 export default function App() {
   const [showIntro, setShowIntro] = useState(true);
   const [tab, setTab] = useState<WorkspaceTab>("plan");
@@ -214,6 +258,7 @@ export default function App() {
       text: assistantLineForProgramTab(INITIAL_PROGRAM_TAB),
     },
   ]);
+  const [nodeChatHistoryById, setNodeChatHistoryById] = useState<Record<string, ChatHistoryItem[]>>({});
   const [featuresOpen, setFeaturesOpen] = useState(true);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(320);
   const [programOpenIds, setProgramOpenIds] = useState<string[]>([]);
@@ -260,6 +305,46 @@ export default function App() {
       },
     ]);
   }, [chatMode]);
+  const pushNodeChatHistory = useCallback((nodeId: string, role: ChatHistoryItem["role"], text: string, mode: ChatMode = "node") => {
+    setNodeChatHistoryById((prev) => ({
+      ...prev,
+      [nodeId]: [
+        ...(prev[nodeId] ?? []),
+        {
+          id: `chat-${nodeId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          mode,
+          role,
+          text,
+        },
+      ],
+    }));
+  }, []);
+  const seedNodeChatHistory = useCallback((nodeId: string, text: string) => {
+    setNodeChatHistoryById((prev) => {
+      if (prev[nodeId]?.length) return prev;
+      return {
+        ...prev,
+        [nodeId]: [
+          {
+            id: `chat-${nodeId}-seed`,
+            mode: "node",
+            role: "assistant",
+            text,
+          },
+        ],
+      };
+    });
+  }, []);
+  const activeNodeId = activeContext?.kind === "node" ? activeContext.id : null;
+  const activeChatHistory = activeNodeId ? nodeChatHistoryById[activeNodeId] ?? [] : chatHistory;
+  const chatPromptCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [nodeId, history] of Object.entries(nodeChatHistoryById)) {
+      const count = history.filter((entry) => entry.role === "user").length;
+      if (count > 0) out[nodeId] = count;
+    }
+    return out;
+  }, [nodeChatHistoryById]);
 
   useEffect(() => {
     setCompletedClusterIds((prev) => {
@@ -352,6 +437,11 @@ export default function App() {
     if ("title" in d && d.title) {
       setScopeLabel(d.title);
       if (d.clusterId) setClusterFocus(d.clusterId);
+      if (d.clusterId) {
+        setActiveContext({ kind: "node", id: n.id, clusterId: d.clusterId, label: d.title });
+        setChatMode("node");
+        seedNodeChatHistory(n.id, `Opened chat history for ${d.title}.`);
+      }
       const payload = d as DecisionNodePayload;
       if (payload.planSourceTabId) {
         setPlanExplorerTabId(payload.planSourceTabId);
@@ -360,7 +450,7 @@ export default function App() {
       return;
     }
     setScopeLabel(n.id);
-  }, []);
+  }, [seedNodeChatHistory]);
 
   const headerCrumb = useMemo(() => {
     switch (tab) {
@@ -780,15 +870,16 @@ export default function App() {
     setClusterFocus(cluster);
     setShowAllClusters(false);
     setPlanExplorerTabId(programTabForCluster(cluster));
-    if (!item.nodeId.startsWith("moved-")) {
+    if (!item.nodeId.includes("-moved-")) {
       setPlanTreeSelections((prev) => ({ ...prev, [cluster]: item.nodeId }));
     }
     setActiveContext({ kind: "node", id: item.nodeId, clusterId: cluster, label: item.title });
     setScopeLabel(item.title);
     const response = `Opened chat history for ${item.title}.`;
     setAssistantLine(response);
-    pushChatHistory("assistant", response, "node");
-  }, [pushChatHistory]);
+    setChatMode("node");
+    seedNodeChatHistory(item.nodeId, response);
+  }, [seedNodeChatHistory]);
 
   const addGeneratedCluster = useCallback(() => {
     const nextCluster = GENERATED_CLUSTER_IDS.find((id) => !generatedClusterIds.includes(id));
@@ -819,14 +910,15 @@ export default function App() {
   const runMock = useCallback(() => {
     const text = prompt.trim();
     if (!text) return;
-    pushChatHistory("user", text, chatMode);
     if (chatMode === "create") {
+      pushChatHistory("user", text, chatMode);
       addGeneratedCluster();
       setPrompt("");
       setChatMode("node");
       return;
     }
     if (chatMode === "move") {
+      pushChatHistory("user", text, chatMode);
       const response = "Mock move prepared. The selected node will become a new root in the target cluster after participant confirmation.";
       setAssistantLine(response);
       pushChatHistory("assistant", response, "move");
@@ -835,17 +927,27 @@ export default function App() {
     }
     if (chatMode === "node" || activeContext?.kind === "node") {
       const label = activeContext?.kind === "node" ? activeContext.label : clusterLabel(clusterFocus);
-      const response = `Expanded the ${label} decision thread with a mock follow-up.`;
+      const nodeId = activeContext?.kind === "node" ? activeContext.id : null;
+      const cluster = activeContext?.kind === "node" ? clusterLabel(activeContext.clusterId) : clusterLabel(clusterFocus);
+      const nextTurn = nodeId ? (nodeChatHistoryById[nodeId]?.filter((entry) => entry.role === "user").length ?? 0) + 1 : 1;
+      const response = nodePromptReply(text, label, cluster, nextTurn);
       setAssistantLine(response);
-      pushChatHistory("assistant", response, "node");
+      if (nodeId) {
+        pushNodeChatHistory(nodeId, "user", text, "node");
+        pushNodeChatHistory(nodeId, "assistant", response, "node");
+      } else {
+        pushChatHistory("user", text, "node");
+        pushChatHistory("assistant", response, "node");
+      }
       setPrompt("");
       return;
     }
-    const response = "Mock reply: I would compare the current prompt against prior decisions, then suggest the next decision point with confidence ratings.";
+    pushChatHistory("user", text, chatMode);
+    const response = generalPromptReply(text);
     setAssistantLine(response);
     pushChatHistory("assistant", response, "general");
     setPrompt("");
-  }, [activeContext, addGeneratedCluster, chatMode, clusterFocus, clusterLabel, prompt, pushChatHistory]);
+  }, [activeContext, addGeneratedCluster, chatMode, clusterFocus, clusterLabel, nodeChatHistoryById, prompt, pushChatHistory, pushNodeChatHistory]);
 
   const prepareCreateCluster = useCallback(() => {
     setChatMode("create");
@@ -859,9 +961,10 @@ export default function App() {
     const fromNode = decisionOutline[from.clusterId]?.find((item) => item.nodeId === from.nodeId);
     const toNode = decisionOutline[to.clusterId]?.find((item) => item.nodeId === to.nodeId);
     if (!fromNode) return;
-    const movedNodeId = `moved-${to.clusterId}-${from.nodeId}`;
+    const movedNodeId = `${nodePrefixForCluster(to.clusterId)}-moved-${from.nodeId.replace(/[^a-z0-9-]/gi, "-")}`;
     const movedNode: DecisionOutlineItem = {
       ...fromNode,
+      clusterId: to.clusterId,
       nodeId: movedNodeId,
       depth: 0,
       title: fromNode.title,
@@ -883,8 +986,19 @@ export default function App() {
     });
     const response = `Mock move: ${fromNode.title} is now a new root tree in ${clusterLabel(to.clusterId)}${toNode ? `, referenced against ${toNode.title}` : ""}.`;
     setAssistantLine(response);
-    pushChatHistory("assistant", response, "move");
-  }, [clusterLabel, decisionOutline, pushChatHistory]);
+    setNodeChatHistoryById((prev) => ({
+      ...prev,
+      [movedNodeId]: [
+        ...(prev[from.nodeId] ?? []),
+        {
+          id: `chat-${movedNodeId}-move`,
+          mode: "move",
+          role: "assistant",
+          text: response,
+        },
+      ],
+    }));
+  }, [clusterLabel, decisionOutline]);
 
   const openClusterRename = useCallback((cluster: ClusterId) => {
     setClusterRenameDraft({ id: cluster, label: clusterLabel(cluster) });
@@ -1220,6 +1334,8 @@ export default function App() {
                     onViewportSave={handlePlanViewportSave}
                     onGenerateFeatures={handleGenerateFeatures}
                     generatedFeatureNodeIds={generatedFeatureNodeIds}
+                    movedRootNodes={movedRootNodes}
+                    chatPromptCounts={chatPromptCounts}
                     onClusterComplete={handleClusterComplete}
                     onTreeUndoNode={handleTreeUndoNode}
                     onTreeNodesCollapsed={handleTreeNodesCollapsed}
@@ -1275,7 +1391,7 @@ export default function App() {
           chatMode={chatMode}
           onChatModeChange={setChatMode}
           assistantLine={assistantLine}
-          chatHistory={chatHistory}
+          chatHistory={activeChatHistory}
           onMoveNode={submitMoveNode}
           onReorderGlobal={setGlobalFeatures}
           onReorderLocal={(cluster, items) => setLocalByCluster((p) => ({ ...p, [cluster]: items }))}

@@ -132,6 +132,15 @@ function TreeEditButton({ onEdit }: { onEdit: () => void }) {
   );
 }
 
+function ChatCountBadge({ count }: { count?: number }) {
+  if (!count) return null;
+  return (
+    <span className="pf-node-chat-count" title={`${count} prompt${count === 1 ? "" : "s"} in this node chat`}>
+      {count}
+    </span>
+  );
+}
+
 export function DecisionNode({ id, data, selected }: NodeProps<DecisionNodePayload>) {
   const accent = clusterColor(data.clusterId);
   const committed = data.treeCommitted;
@@ -168,6 +177,7 @@ export function DecisionNode({ id, data, selected }: NodeProps<DecisionNodePaylo
       className={`pf-node pf-node--decision ${selected ? "pf-node--selected" : ""}`}
       style={ringStyle}
     >
+      <ChatCountBadge count={data.chatPromptCount} />
       <Handle type="target" position={Position.Top} className="pf-handle" />
       <div className="pf-node__head">
         <span className="pf-node__title">{data.title}</span>
@@ -223,6 +233,7 @@ export function BranchNode({ id, data, selected }: NodeProps<DecisionNodePayload
     committed || hoverPath || pathHover ? hex : accent;
   return (
     <div className={`pf-node pf-node--branch ${selected ? "pf-node--selected" : ""}`} style={ringStyle}>
+      <ChatCountBadge count={data.chatPromptCount} />
       <Handle type="target" position={Position.Top} className="pf-handle" />
       <div className="pf-node__head pf-node__head--compact">
         <span className="pf-node__pill" style={{ borderColor: pillBorder }}>
