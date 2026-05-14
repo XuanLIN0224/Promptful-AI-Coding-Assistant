@@ -182,6 +182,10 @@ function nodePrefixForCluster(cluster: ClusterId): string {
   return cluster;
 }
 
+function safeNodePart(value: string): string {
+  return value.replace(/[^a-z0-9-]/gi, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+}
+
 function nodePromptReply(text: string, label: string, cluster: string, turn: number): string {
   const lower = text.toLowerCase();
   if (lower.includes("why") || lower.includes("because")) {
@@ -958,21 +962,36 @@ export default function App() {
   }, [pushChatHistory]);
 
   const submitMoveNode = useCallback((from: { clusterId: ClusterId; nodeId: string }, to: { clusterId: ClusterId; nodeId: string }) => {
-    const fromNode = decisionOutline[from.clusterId]?.find((item) => item.nodeId === from.nodeId);
+    const sourceNodes = decisionOutline[from.clusterId] ?? [];
+    const fromNode = sourceNodes.find((item) => item.nodeId === from.nodeId);
     const toNode = decisionOutline[to.clusterId]?.find((item) => item.nodeId === to.nodeId);
     if (!fromNode) return;
-    const movedNodeId = `${nodePrefixForCluster(to.clusterId)}-moved-${from.nodeId.replace(/[^a-z0-9-]/gi, "-")}`;
-    const movedNode: DecisionOutlineItem = {
-      ...fromNode,
+    const prefix = `${nodePrefixForCluster(to.clusterId)}-moved-${safeNodePart(from.nodeId)}`;
+    const startIndex = sourceNodes.findIndex((item) => item.nodeId === from.nodeId);
+    const sourceDepth = fromNode.depth;
+    const subtree: DecisionOutlineItem[] = [];
+    if (startIndex >= 0) {
+      for (let index = startIndex; index < sourceNodes.length; index += 1) {
+        const item = sourceNodes[index];
+        if (index > startIndex && item.depth <= sourceDepth) break;
+        subtree.push(item);
+      }
+    }
+    if (subtree.length === 0) subtree.push(fromNode);
+    const movedNodes = subtree.map((item, index): DecisionOutlineItem => ({
+      ...item,
       clusterId: to.clusterId,
-      nodeId: movedNodeId,
-      depth: 0,
-      title: fromNode.title,
-      summary: `Moved from ${clusterLabel(from.clusterId)} as a separate root tree. ${fromNode.summary}`,
-    };
+      nodeId: `${prefix}-${safeNodePart(item.nodeId)}`,
+      depth: Math.max(0, item.depth - sourceDepth),
+      title: item.title,
+      summary: index === 0
+        ? `Moved from ${clusterLabel(from.clusterId)} as a separate root tree. ${item.summary}`
+        : item.summary,
+    }));
+    const movedRoot = movedNodes[0];
     setMovedRootNodes((prev) => {
       const existing = prev[to.clusterId] ?? [];
-      const nextForCluster = [movedNode, ...existing.filter((node) => node.nodeId !== movedNodeId)];
+      const nextForCluster = [...movedNodes, ...existing.filter((node) => !node.nodeId.startsWith(`${prefix}-`))];
       return { ...prev, [to.clusterId]: nextForCluster };
     });
     setChatMode("move");
@@ -980,24 +999,29 @@ export default function App() {
     setShowAllClusters(false);
     setActiveContext({
       kind: "node",
-      id: movedNodeId,
+      id: movedRoot.nodeId,
       clusterId: to.clusterId,
       label: fromNode.title,
     });
-    const response = `Mock move: ${fromNode.title} is now a new root tree in ${clusterLabel(to.clusterId)}${toNode ? `, referenced against ${toNode.title}` : ""}.`;
+    const response = `Mock move: ${fromNode.title} and its child decisions are now a new root tree in ${clusterLabel(to.clusterId)}${toNode ? `, referenced against ${toNode.title}` : ""}.`;
     setAssistantLine(response);
-    setNodeChatHistoryById((prev) => ({
-      ...prev,
-      [movedNodeId]: [
-        ...(prev[from.nodeId] ?? []),
+    setNodeChatHistoryById((prev) => {
+      const next = { ...prev };
+      movedNodes.forEach((movedNode, index) => {
+        const originalNode = subtree[index];
+        next[movedNode.nodeId] = [...(prev[originalNode.nodeId] ?? [])];
+      });
+      next[movedRoot.nodeId] = [
+        ...(next[movedRoot.nodeId] ?? []),
         {
-          id: `chat-${movedNodeId}-move`,
+          id: `chat-${movedRoot.nodeId}-move`,
           mode: "move",
           role: "assistant",
           text: response,
         },
-      ],
-    }));
+      ];
+      return next;
+    });
   }, [clusterLabel, decisionOutline]);
 
   const openClusterRename = useCallback((cluster: ClusterId) => {

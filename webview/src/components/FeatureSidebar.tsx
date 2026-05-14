@@ -813,9 +813,9 @@ export function FeatureSidebar({
             <div className="pf-chat-modes" role="tablist" aria-label="Chat mode">
               {([
                 ["general", "General"],
-                ["node", "Node"],
-                ["move", "Move"],
-                ["create", "Create"],
+                ["node", "Node chat"],
+                ["move", "Move node"],
+                ["create", "Create cluster"],
               ] as const).map(([mode, label]) => (
                 <button
                   key={mode}

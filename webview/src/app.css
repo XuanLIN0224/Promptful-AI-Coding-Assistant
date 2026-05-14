@@ -1591,10 +1591,12 @@
   border-radius: 9px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 650;
   padding: 7px 4px;
   cursor: pointer;
+  line-height: 1.1;
+  white-space: normal;
 }
 
 .pf-chat-mode--active {

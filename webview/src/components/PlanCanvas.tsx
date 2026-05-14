@@ -148,15 +148,20 @@ function contentBoundsForKind(nodes: readonly Node[], kind: PlanTreeKind): { min
 
 function appendMovedRootNodes(base: { nodes: Node[]; edges: Edge[] }, movedRootNodes: Partial<Record<ClusterId, DecisionOutlineItem[]>>): { nodes: Node[]; edges: Edge[] } {
   const extra: Node<DecisionNodePayload>[] = [];
+  const extraEdges: Edge[] = [];
   for (const [kind, movedNodes] of Object.entries(movedRootNodes) as [PlanTreeKind, DecisionOutlineItem[]][]) {
     const bounds = contentBoundsForKind([...base.nodes, ...extra], kind);
     const startX = bounds ? bounds.minX : 120;
     const startY = bounds ? bounds.maxY + 96 : 120;
+    const parentStack: string[] = [];
     movedNodes.forEach((item, index) => {
+      const depth = Math.max(0, item.depth);
+      parentStack.length = depth;
+      const parentId = depth > 0 ? parentStack[depth - 1] : undefined;
       extra.push({
         id: item.nodeId,
-        type: "decision",
-        position: { x: startX + index * 292, y: startY + index * 22 },
+        type: depth === 0 ? "decision" : "branch",
+        position: { x: startX + depth * 284, y: startY + index * 150 },
         data: {
           title: item.title,
           summary: item.summary,
@@ -167,9 +172,19 @@ function appendMovedRootNodes(base: { nodes: Node[]; edges: Edge[] }, movedRootN
         draggable: true,
         zIndex: 1,
       });
+      if (parentId) {
+        extraEdges.push({
+          id: `moved-edge-${parentId}-${item.nodeId}`,
+          source: parentId,
+          target: item.nodeId,
+          type: "smoothstep",
+          animated: false,
+        });
+      }
+      parentStack[depth] = item.nodeId;
     });
   }
-  return extra.length > 0 ? { nodes: [...base.nodes, ...extra], edges: base.edges } : base;
+  return extra.length > 0 ? { nodes: [...base.nodes, ...extra], edges: [...base.edges, ...extraEdges] } : base;
 }
 
 function fileGraphPack(): { nodes: Node[]; edges: Edge[] } {
