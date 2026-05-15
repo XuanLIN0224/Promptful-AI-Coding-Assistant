@@ -132,6 +132,45 @@ function TreeEditButton({ onEdit }: { onEdit: () => void }) {
   );
 }
 
+function TreeMoveButton({ onMove }: { onMove: () => void }) {
+  return (
+    <button
+      type="button"
+      className="pf-tree-edit nodrag"
+      aria-label="Move node"
+      title="Move node"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onMove();
+      }}
+    >
+      <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M7 7h10v10" />
+        <path d="M7 17 17 7" />
+      </svg>
+    </button>
+  );
+}
+
+function TreeConfirmBox({ checked, onToggle }: { checked?: boolean; onToggle?: () => void }) {
+  return (
+    <button
+      type="button"
+      className={`pf-tree-confirm nodrag ${checked ? "pf-tree-confirm--on" : ""}`}
+      aria-label={checked ? "Unconfirm decision" : "Confirm decision"}
+      title={checked ? "Included in confirmed plan" : "Include in confirmed plan"}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle?.();
+      }}
+    >
+      {checked ? "✓" : ""}
+    </button>
+  );
+}
+
 function ChatCountBadge({ count }: { count?: number }) {
   if (!count) return null;
   return (
@@ -184,10 +223,11 @@ export function DecisionNode({ id, data, selected }: NodeProps<DecisionNodePaylo
         <div className="pf-node__tools nodrag">
           <TreeGenerateButton generated={data.featuresGenerated} onGenerate={(target) => data.onGenerateFeatures?.(id, target)} />
           {data.onEditNode ? <TreeEditButton onEdit={() => data.onEditNode?.(id)} /> : null}
+          {data.onMoveNode ? <TreeMoveButton onMove={() => data.onMoveNode?.(id, data.clusterId)} /> : null}
           {data.treeCanToggleChildren ? (
             <TreeExpandButton expanded={data.treeChildrenExpanded !== false} onToggle={() => data.onTreeToggleChildren?.(id)} />
           ) : null}
-          {data.treeShowUndo ? <TreeUndoButton onUndo={() => data.onTreeUndo?.(id)} /> : null}
+          <TreeConfirmBox checked={data.nodeConfirmed} onToggle={() => data.onToggleConfirm?.(id)} />
           <SourceIcon sources={data.sources} />
         </div>
       </div>
@@ -242,10 +282,11 @@ export function BranchNode({ id, data, selected }: NodeProps<DecisionNodePayload
         <div className="pf-node__tools nodrag">
           <TreeGenerateButton generated={data.featuresGenerated} onGenerate={(target) => data.onGenerateFeatures?.(id, target)} />
           {data.onEditNode ? <TreeEditButton onEdit={() => data.onEditNode?.(id)} /> : null}
+          {data.onMoveNode ? <TreeMoveButton onMove={() => data.onMoveNode?.(id, data.clusterId)} /> : null}
           {data.treeCanToggleChildren ? (
             <TreeExpandButton expanded={data.treeChildrenExpanded !== false} onToggle={() => data.onTreeToggleChildren?.(id)} />
           ) : null}
-          {data.treeShowUndo ? <TreeUndoButton onUndo={() => data.onTreeUndo?.(id)} /> : null}
+          <TreeConfirmBox checked={data.nodeConfirmed} onToggle={() => data.onToggleConfirm?.(id)} />
           <SourceIcon sources={data.sources} />
         </div>
       </div>

@@ -17,7 +17,7 @@ export type ClusterId =
   | "compliance11"
   | "compliance12";
 
-export type WorkspaceTab = "plan" | "program";
+export type WorkspaceTab = "plan" | "program" | "source";
 
 export type PlanCanvasMode = "overview" | "nodegraph";
 
@@ -108,6 +108,11 @@ export interface DecisionNodePayload {
   onGenerateFeatures?: (nodeId: string, target: "global" | "local") => void;
   /** Mock editing affordance for the decision tree content */
   onEditNode?: (nodeId: string) => void;
+  /** Mock move affordance for moving the node/subtree into another cluster */
+  onMoveNode?: (nodeId: string, clusterId: ClusterId) => void;
+  /** Confirmation checkbox for selected route/manual inclusion in code generation */
+  onToggleConfirm?: (nodeId: string) => void;
+  nodeConfirmed?: boolean;
   /** Count of participant prompts attached to this node's chat history */
   chatPromptCount?: number;
 }

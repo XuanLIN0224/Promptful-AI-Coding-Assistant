@@ -40,6 +40,7 @@ type ChatHistoryItem = {
   role: "user" | "assistant";
   text: string;
 };
+type SourceAssignment = Record<string, string[]>;
 
 const PROGRAM_TAB_BY_CLUSTER: Partial<Record<ClusterId, string>> = {
   core: "split-ts",
@@ -227,6 +228,7 @@ export default function App() {
   const [planExplorerTabId, setPlanExplorerTabId] = useState<string>(INITIAL_PROGRAM_TAB);
   const [planTreeSelections, setPlanTreeSelections] = useState<Partial<Record<PlanTreeKind, string | null>>>({});
   const [showAllClusters, setShowAllClusters] = useState(true);
+  const [legendCollapsed, setLegendCollapsed] = useState(false);
   const [planViewportOverview, setPlanViewportOverview] = useState<Viewport | null>(null);
   const [planViewportNodegraph, setPlanViewportNodegraph] = useState<Viewport | null>(null);
   const [clusterFocus, setClusterFocus] = useState<ClusterId>("core");
@@ -247,8 +249,13 @@ export default function App() {
   const [prompt, setPrompt] = useState("");
   const [chatMode, setChatMode] = useState<ChatMode>("general");
   const [canvasContextOpen, setCanvasContextOpen] = useState({ global: true, local: true });
+  const [confirmedNodeIds, setConfirmedNodeIds] = useState<Set<string>>(() => new Set());
   const [movedRootNodes, setMovedRootNodes] = useState<Partial<Record<ClusterId, DecisionOutlineItem[]>>>({});
+  const [moveDraft, setMoveDraft] = useState<null | { fromCluster: ClusterId; fromNode: string; toCluster: ClusterId; toNode: string }>(null);
+  const [clusterCreateDraft, setClusterCreateDraft] = useState<null | { label: string }>(null);
   const [attachments, setAttachments] = useState<IntroAttachment[]>([]);
+  const [sourceAssignments, setSourceAssignments] = useState<SourceAssignment>({});
+  const [topSearch, setTopSearch] = useState("");
   const [linkCaptureOpen, setLinkCaptureOpen] = useState(false);
   const [linkDraft, setLinkDraft] = useState("");
   const [pendingLinks, setPendingLinks] = useState<string[]>([]);
@@ -421,6 +428,25 @@ export default function App() {
   const begin = useCallback((t: WorkspaceTab) => {
     setShowIntro(false);
     setTab(t);
+  }, []);
+
+  const beginClusterFromIntro = useCallback((cluster: ClusterId) => {
+    setShowIntro(false);
+    setTab("plan");
+    setPlanMode("overview");
+    setClusterFocus(cluster);
+    setShowAllClusters(false);
+    setPlanExplorerTabId(programTabForCluster(cluster));
+  }, []);
+
+  const beginAllClustersFromIntro = useCallback(() => {
+    setShowIntro(false);
+    setTab("plan");
+    setPlanMode("overview");
+    setShowAllClusters(true);
+    setActiveContext(null);
+    setChatMode("general");
+    setAssistantLine("General project view opened. The mock assistant will answer across all clusters.");
   }, []);
 
   const onFlowSelection = useCallback((p: OnSelectionChangeParams) => {
@@ -675,8 +701,6 @@ export default function App() {
 
   const sendFromIntro = useCallback(() => {
     if (!consumePromptForMock()) return;
-    setShowIntro(false);
-    setTab("plan");
   }, [consumePromptForMock]);
 
   const pushPendingLink = useCallback(() => {
@@ -828,6 +852,17 @@ export default function App() {
     () => (planApplied ? programCatalog.map((file) => ({ id: file.id, label: file.label, path: file.path })) : []),
     [planApplied, programCatalog]
   );
+  const allDecisionNodes = useMemo(
+    () =>
+      visibleClusterIds.flatMap((clusterId) =>
+        (decisionOutline[clusterId] ?? []).map((node) => ({
+          clusterId,
+          clusterLabel: clusterLabel(clusterId),
+          node,
+        }))
+      ),
+    [clusterLabel, decisionOutline, visibleClusterIds]
+  );
 
   const pickProgramFileFromSidebar = useCallback(
     (fileId: string) => {
@@ -954,12 +989,8 @@ export default function App() {
   }, [activeContext, addGeneratedCluster, chatMode, clusterFocus, clusterLabel, nodeChatHistoryById, prompt, pushChatHistory, pushNodeChatHistory]);
 
   const prepareCreateCluster = useCallback(() => {
-    setChatMode("create");
-    setPrompt("");
-    const response = "Describe the cluster to create. The mock assistant will generate it after Send.";
-    setAssistantLine(response);
-    pushChatHistory("assistant", response, "create");
-  }, [pushChatHistory]);
+    setClusterCreateDraft({ label: GENERATED_CLUSTER_IDS.find((id) => !generatedClusterIds.includes(id)) === "security" ? "Security" : "" });
+  }, [generatedClusterIds]);
 
   const submitMoveNode = useCallback((from: { clusterId: ClusterId; nodeId: string }, to: { clusterId: ClusterId; nodeId: string }) => {
     const sourceNodes = decisionOutline[from.clusterId] ?? [];
@@ -994,7 +1025,7 @@ export default function App() {
       const nextForCluster = [...movedNodes, ...existing.filter((node) => !node.nodeId.startsWith(`${prefix}-`))];
       return { ...prev, [to.clusterId]: nextForCluster };
     });
-    setChatMode("move");
+    setChatMode("node");
     setClusterFocus(to.clusterId);
     setShowAllClusters(false);
     setActiveContext({
@@ -1035,6 +1066,52 @@ export default function App() {
     setAssistantLine(`Renamed cluster to ${nextLabel}.`);
     setClusterRenameDraft(null);
   }, [clusterLabel, clusterRenameDraft]);
+
+  const toggleConfirmNode = useCallback((nodeId: string) => {
+    setConfirmedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  }, []);
+
+  const requestMoveNode = useCallback((nodeId: string, fromCluster: ClusterId) => {
+    const toCluster = clusterFocus;
+    const toNode = decisionOutline[toCluster]?.[0]?.nodeId ?? "";
+    setMoveDraft({ fromCluster, fromNode: nodeId, toCluster, toNode });
+  }, [clusterFocus, decisionOutline]);
+
+  const toggleSourceAssignment = useCallback((sourceId: string, nodeId: string) => {
+    setSourceAssignments((prev) => {
+      const current = new Set(prev[sourceId] ?? []);
+      if (current.has(nodeId)) current.delete(nodeId);
+      else current.add(nodeId);
+      return { ...prev, [sourceId]: [...current] };
+    });
+  }, []);
+
+  const createNamedCluster = useCallback(() => {
+    const label = clusterCreateDraft?.label.trim();
+    if (!label) return;
+    const nextCluster = GENERATED_CLUSTER_IDS.find((id) => !generatedClusterIds.includes(id));
+    if (!nextCluster) return;
+    setGeneratedClusterIds((prev) => [...prev, nextCluster]);
+    setClusterLabelOverrides((prev) => ({ ...prev, [nextCluster]: nextCluster === "security" ? "Security" : label }));
+    setClusterCreateDraft(null);
+    setShowIntro(false);
+    setTab("plan");
+    setPlanMode("overview");
+    setClusterFocus(nextCluster);
+    setShowAllClusters(false);
+    setPlanExplorerTabId(programTabForCluster(nextCluster));
+    const rootNode = decisionOutlineForCluster(nextCluster)[0];
+    if (rootNode) {
+      setActiveContext({ kind: "node", id: rootNode.nodeId, clusterId: nextCluster, label: rootNode.title });
+      setScopeLabel(rootNode.title);
+      seedNodeChatHistory(rootNode.nodeId, `Created ${clusterLabelOverrides[nextCluster] ?? (nextCluster === "security" ? "Security" : label)}. Prompt the root node to generate its decision tree.`);
+    }
+  }, [clusterCreateDraft, clusterLabelOverrides, generatedClusterIds, seedNodeChatHistory]);
 
   const startSidebarResize = useCallback(
     (startX: number) => {
@@ -1159,6 +1236,77 @@ export default function App() {
           </div>
         </div>
       )}
+      {moveDraft && (
+        <div className="pf-link-modal-backdrop" role="presentation" onMouseDown={() => setMoveDraft(null)}>
+          <div className="pf-link-modal" role="dialog" aria-modal="true" aria-labelledby="pf-move-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div id="pf-move-title" className="pf-link-modal__title">Move node</div>
+            <label className="pf-tree-edit-modal__field">
+              <span>To cluster</span>
+              <select
+                value={moveDraft.toCluster}
+                onChange={(event) => {
+                  const toCluster = event.target.value as ClusterId;
+                  setMoveDraft((prev) => prev ? { ...prev, toCluster, toNode: decisionOutline[toCluster]?.[0]?.nodeId ?? "" } : prev);
+                }}
+              >
+                {visibleClusters.map((cluster) => (
+                  <option key={cluster.id} value={cluster.id}>{cluster.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="pf-tree-edit-modal__field">
+              <span>Reference node</span>
+              <select
+                value={moveDraft.toNode}
+                onChange={(event) => setMoveDraft((prev) => prev ? { ...prev, toNode: event.target.value } : prev)}
+              >
+                {(decisionOutline[moveDraft.toCluster] ?? []).map((node) => (
+                  <option key={node.nodeId} value={node.nodeId}>{node.title}</option>
+                ))}
+              </select>
+            </label>
+            <div className="pf-link-modal__actions">
+              <button type="button" className="pf-link-modal__cancel" onClick={() => setMoveDraft(null)}>Cancel</button>
+              <button
+                type="button"
+                className="pf-link-modal__confirm"
+                onClick={() => {
+                  submitMoveNode(
+                    { clusterId: moveDraft.fromCluster, nodeId: moveDraft.fromNode },
+                    { clusterId: moveDraft.toCluster, nodeId: moveDraft.toNode }
+                  );
+                  setMoveDraft(null);
+                }}
+                disabled={!moveDraft.toNode}
+              >
+                Move
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {clusterCreateDraft && (
+        <div className="pf-link-modal-backdrop" role="presentation" onMouseDown={() => setClusterCreateDraft(null)}>
+          <div className="pf-link-modal" role="dialog" aria-modal="true" aria-labelledby="pf-create-cluster-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div id="pf-create-cluster-title" className="pf-link-modal__title">Create cluster</div>
+            <label className="pf-tree-edit-modal__field">
+              <span>Cluster name</span>
+              <input
+                value={clusterCreateDraft.label}
+                autoFocus
+                placeholder="e.g. Security"
+                onChange={(event) => setClusterCreateDraft({ label: event.target.value })}
+              />
+            </label>
+            <div className="pf-link-modal__actions">
+              <button type="button" className="pf-link-modal__cancel" onClick={() => setClusterCreateDraft(null)}>Cancel</button>
+              <button type="button" className="pf-link-modal__confirm" onClick={createNamedCluster} disabled={!clusterCreateDraft.label.trim()}>
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showIntro && (
         <IntroOverlay
           prompt={prompt}
@@ -1168,6 +1316,9 @@ export default function App() {
           onAddAttachment={addAttachmentMetadata}
           onRemoveAttachment={removeAttachmentMetadata}
           onBegin={begin}
+          clusters={visibleClusters}
+          onChooseCluster={beginClusterFromIntro}
+          onViewAllClusters={beginAllClustersFromIntro}
         />
       )}
 
@@ -1189,6 +1340,7 @@ export default function App() {
               [
                 ["plan", "Plan"],
                 ["program", "Program"],
+                ["source", "Source"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -1204,6 +1356,14 @@ export default function App() {
               </button>
             ))}
           </div>
+          <input
+            className="pf-top-search"
+            type="search"
+            placeholder="Search prompts, files, clusters..."
+            value={topSearch}
+            onChange={(event) => setTopSearch(event.target.value)}
+            aria-label="Search prompts, files, and clusters"
+          />
         </div>
         <div className="pf-crumb">{headerCrumb}</div>
       </header>
@@ -1250,8 +1410,17 @@ export default function App() {
                   </div>
                 </div>
                 <div className="pf-plan-canvas-wrap">
-                  <div className="pf-canvas-legend" aria-label="Cluster legend">
-                    {visibleClusters.map((c) => (
+                  <div className={`pf-canvas-legend ${legendCollapsed ? "pf-canvas-legend--collapsed" : ""}`} aria-label="Cluster legend">
+                    <button
+                      type="button"
+                      className="pf-legend__collapse"
+                      onClick={() => setLegendCollapsed((value) => !value)}
+                      aria-label={legendCollapsed ? "Expand cluster indicators" : "Collapse cluster indicators"}
+                      title={legendCollapsed ? "Show indicators" : "Hide indicators"}
+                    >
+                      {legendCollapsed ? "+" : "−"}
+                    </button>
+                    {!legendCollapsed && visibleClusters.map((c) => (
                       <span key={c.id} className="pf-legend__item">
                         <span className="pf-legend__dot" style={{ background: c.color }} />
                         <span>{c.label}</span>
@@ -1281,6 +1450,19 @@ export default function App() {
                                 onClick={() => setActiveContext({ kind: "global", id: item.id })}
                               >
                                 <span>{item.label}</span>
+                                <span
+                                  className="pf-context-chip__menu"
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={`Edit ${item.label}`}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    const next = window.prompt("Rename global feature", item.label);
+                                    if (next?.trim()) renameGlobalFeature(item.id, next.trim());
+                                  }}
+                                >
+                                  ⋯
+                                </span>
                                 <span
                                   className="pf-context-chip__remove"
                                   role="button"
@@ -1324,6 +1506,19 @@ export default function App() {
                               >
                                 <span>{item.label}</span>
                                 <span
+                                  className="pf-context-chip__menu"
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={`Edit ${item.label}`}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    const next = window.prompt("Rename local feature", item.label);
+                                    if (next?.trim()) renameLocalFeature(clusterFocus, item.id, next.trim());
+                                  }}
+                                >
+                                  ⋯
+                                </span>
+                                <span
                                   className="pf-context-chip__remove"
                                   role="button"
                                   tabIndex={0}
@@ -1360,6 +1555,9 @@ export default function App() {
                     generatedFeatureNodeIds={generatedFeatureNodeIds}
                     movedRootNodes={movedRootNodes}
                     chatPromptCounts={chatPromptCounts}
+                    confirmedNodeIds={confirmedNodeIds}
+                    onToggleConfirmNode={toggleConfirmNode}
+                    onRequestMoveNode={requestMoveNode}
                     onClusterComplete={handleClusterComplete}
                     onTreeUndoNode={handleTreeUndoNode}
                     onTreeNodesCollapsed={handleTreeNodesCollapsed}
@@ -1377,6 +1575,50 @@ export default function App() {
                 onCloseTab={closeProgramTab}
                 onOpenDecisionNode={navigateProgramDecision}
               />
+            )}
+            {tab === "source" && (
+              <section className="pf-source-page" aria-label="Source manager">
+                <div className="pf-source-page__head">
+                  <div>
+                    <h2>Source</h2>
+                    <p>Add references and assign each source to one or more decision nodes.</p>
+                  </div>
+                  <div className="pf-source-page__actions">
+                    <button type="button" onClick={() => addAttachmentMetadata("link")}>Add link</button>
+                    <button type="button" onClick={() => addAttachmentMetadata("upload")}>Upload</button>
+                  </div>
+                </div>
+                <div className="pf-source-page__grid">
+                  <div className="pf-source-page__list">
+                    {sourceItems.length === 0 ? (
+                      <div className="pf-source-page__empty">No sources yet.</div>
+                    ) : (
+                      sourceItems.map((source) => (
+                        <article key={source.id} className="pf-source-page__card">
+                          <div>
+                            <span className="pf-source-page__kind">{source.kind}</span>
+                            <strong>{source.label}</strong>
+                          </div>
+                          <button type="button" onClick={() => removeSourceFromPanel(source.id)}>Remove</button>
+                          <div className="pf-source-page__assign">
+                            {allDecisionNodes.map(({ clusterLabel: label, node }) => (
+                              <label key={`${source.id}-${node.nodeId}`} className="pf-source-page__check">
+                                <input
+                                  type="checkbox"
+                                  checked={(sourceAssignments[source.id] ?? []).includes(node.nodeId)}
+                                  onChange={() => toggleSourceAssignment(source.id, node.nodeId)}
+                                />
+                                <span>{node.title}</span>
+                                <em>{label}</em>
+                              </label>
+                            ))}
+                          </div>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </section>
             )}
           </main>
 
@@ -1409,6 +1651,10 @@ export default function App() {
           onNavigateDecisionNode={navigateDecisionNode}
           onRenameCluster={openClusterRename}
           onAddCluster={prepareCreateCluster}
+          onViewAllLayers={beginAllClustersFromIntro}
+          showAllLayers={showAllClusters}
+          searchValue={topSearch}
+          onSearchChange={setTopSearch}
           composerPrompt={prompt}
           onComposerPromptChange={setPrompt}
           onComposerSubmit={runMock}

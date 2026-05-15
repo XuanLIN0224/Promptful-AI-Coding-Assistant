@@ -221,6 +221,9 @@ function Inner({
   generatedFeatureNodeIds,
   movedRootNodes,
   chatPromptCounts,
+  confirmedNodeIds,
+  onToggleConfirmNode,
+  onRequestMoveNode,
   onClusterComplete,
   onTreeUndoNode,
   onTreeNodesCollapsed,
@@ -243,6 +246,9 @@ function Inner({
   generatedFeatureNodeIds: ReadonlySet<string>;
   movedRootNodes: Partial<Record<ClusterId, DecisionOutlineItem[]>>;
   chatPromptCounts: Record<string, number>;
+  confirmedNodeIds: ReadonlySet<string>;
+  onToggleConfirmNode: (nodeId: string) => void;
+  onRequestMoveNode: (nodeId: string, clusterId: ClusterId) => void;
   onClusterComplete: (kind: PlanTreeKind) => void;
   onTreeUndoNode: (nodeId: string, kind: PlanTreeKind) => void;
   onTreeNodesCollapsed: (nodeIds: string[], kind: PlanTreeKind) => void;
@@ -490,6 +496,9 @@ function Inner({
             treeChildrenExpanded: true,
             featuresGenerated: generatedFeatureNodeIds.has(n.id),
             chatPromptCount: chatPromptCounts[n.id] ?? 0,
+            nodeConfirmed: confirmedNodeIds.has(n.id),
+            onToggleConfirm: onToggleConfirmNode,
+            onMoveNode: onRequestMoveNode,
             onEditNode: handleTreeEditNode,
             onGenerateFeatures: (_nodeId: string, target: "global" | "local") =>
               onGenerateFeatures({
@@ -536,6 +545,9 @@ function Inner({
           onTreeToggleChildren: handleTreeToggleChildren,
           featuresGenerated: generatedFeatureNodeIds.has(n.id),
           chatPromptCount: chatPromptCounts[n.id] ?? 0,
+          nodeConfirmed: committed || confirmedNodeIds.has(n.id),
+          onToggleConfirm: onToggleConfirmNode,
+          onMoveNode: onRequestMoveNode,
           onEditNode: handleTreeEditNode,
           onGenerateFeatures: (_nodeId: string, target: "global" | "local") =>
             onGenerateFeatures({
@@ -608,6 +620,9 @@ function Inner({
     handleTreeEditNode,
     generatedFeatureNodeIds,
     chatPromptCounts,
+    confirmedNodeIds,
+    onToggleConfirmNode,
+    onRequestMoveNode,
     nodeTextEdits,
     onGenerateFeatures,
   ]);
@@ -910,6 +925,9 @@ export function PlanCanvas({
   generatedFeatureNodeIds,
   movedRootNodes,
   chatPromptCounts,
+  confirmedNodeIds,
+  onToggleConfirmNode,
+  onRequestMoveNode,
   onClusterComplete,
   onTreeUndoNode,
   onTreeNodesCollapsed,
@@ -932,6 +950,9 @@ export function PlanCanvas({
   generatedFeatureNodeIds: ReadonlySet<string>;
   movedRootNodes: Partial<Record<ClusterId, DecisionOutlineItem[]>>;
   chatPromptCounts: Record<string, number>;
+  confirmedNodeIds: ReadonlySet<string>;
+  onToggleConfirmNode: (nodeId: string) => void;
+  onRequestMoveNode: (nodeId: string, clusterId: ClusterId) => void;
   onClusterComplete: (kind: PlanTreeKind) => void;
   onTreeUndoNode: (nodeId: string, kind: PlanTreeKind) => void;
   onTreeNodesCollapsed: (nodeIds: string[], kind: PlanTreeKind) => void;
@@ -960,6 +981,9 @@ export function PlanCanvas({
             generatedFeatureNodeIds={generatedFeatureNodeIds}
             movedRootNodes={movedRootNodes}
             chatPromptCounts={chatPromptCounts}
+            confirmedNodeIds={confirmedNodeIds}
+            onToggleConfirmNode={onToggleConfirmNode}
+            onRequestMoveNode={onRequestMoveNode}
             onClusterComplete={onClusterComplete}
             onTreeUndoNode={onTreeUndoNode}
             onTreeNodesCollapsed={onTreeNodesCollapsed}

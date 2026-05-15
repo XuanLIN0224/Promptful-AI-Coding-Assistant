@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { WorkspaceTab } from "../types";
+import type { ClusterId, ClusterMeta, WorkspaceTab } from "../types";
 
 /** Placeholder names only - this mock never calls a real model or API. */
 const MOCK_MODELS = ["Promptful Mock", "Structure Assistant", "Decision Mapper", "Context Reviewer"] as const;
@@ -18,6 +18,9 @@ export function IntroOverlay({
   attachments,
   onAddAttachment,
   onRemoveAttachment,
+  clusters,
+  onChooseCluster,
+  onViewAllClusters,
 }: {
   onBegin: (tab: WorkspaceTab) => void;
   prompt: string;
@@ -26,9 +29,14 @@ export function IntroOverlay({
   attachments: readonly IntroAttachment[];
   onAddAttachment: (action: "link" | "upload") => void;
   onRemoveAttachment: (id: string) => void;
+  clusters: readonly ClusterMeta[];
+  onChooseCluster: (cluster: ClusterId) => void;
+  onViewAllClusters: () => void;
 }) {
   const [modelId, setModelId] = useState<string>(MOCK_MODELS[0]);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [analysisStarted, setAnalysisStarted] = useState(false);
+  const [analysisStep, setAnalysisStep] = useState<0 | 1 | 2>(0);
   const plusMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -41,6 +49,15 @@ export function IntroOverlay({
     window.addEventListener("mousedown", onDown);
     return () => window.removeEventListener("mousedown", onDown);
   }, [plusMenuOpen]);
+
+  const startAnalysis = () => {
+    if (!prompt.trim()) return;
+    onPromptSend();
+    setAnalysisStarted(true);
+    setAnalysisStep(0);
+    window.setTimeout(() => setAnalysisStep(1), 650);
+    window.setTimeout(() => setAnalysisStep(2), 1350);
+  };
 
   return (
     <div className="pf-intro">
@@ -76,6 +93,9 @@ export function IntroOverlay({
             </button>
             <button type="button" className="pf-intro__mode" onClick={() => onBegin("program")}>
               Program
+            </button>
+            <button type="button" className="pf-intro__mode" onClick={() => onBegin("source")}>
+              Source
             </button>
           </div>
         </div>
@@ -149,19 +169,62 @@ export function IntroOverlay({
                 onKeyDown={(e) => {
                   if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
                   e.preventDefault();
-                  if (prompt.trim()) onPromptSend();
+                  if (prompt.trim()) startAnalysis();
                 }}
               />
               <button
                 type="button"
                 className="pf-intro__send"
                 aria-label="Send prompt"
-                onClick={() => onPromptSend()}
+                onClick={startAnalysis}
                 disabled={!prompt.trim()}
               >
                 Send
               </button>
             </div>
+            {analysisStarted && (
+              <div className="pf-intro__analysis" aria-live="polite">
+                <div className="pf-intro__analysis-line">
+                  <span className="pf-intro__spinner" aria-hidden />
+                  <span>Processing your query</span>
+                </div>
+                {attachments.length === 0 && analysisStep >= 1 && (
+                  <div className="pf-intro__source-nudge">
+                    <span>No source attached yet. Add a reference now, or continue without one.</span>
+                    <button type="button" onClick={() => onAddAttachment("link")}>Add link</button>
+                    <button type="button" onClick={() => onAddAttachment("upload")}>Upload</button>
+                  </div>
+                )}
+                {analysisStep >= 1 && (
+                  <div className="pf-intro__analysis-line">
+                    <span className="pf-intro__spinner" aria-hidden />
+                    <span>Clustering core themes</span>
+                  </div>
+                )}
+                {analysisStep >= 2 && (
+                  <div className="pf-intro__cluster-choice">
+                    <p>There appear to be four core clusters. Where would you like to start?</p>
+                    <div className="pf-intro__cluster-grid">
+                      {clusters.slice(0, 4).map((cluster) => (
+                        <button
+                          key={cluster.id}
+                          type="button"
+                          className="pf-intro__cluster-btn"
+                          style={{ borderColor: cluster.hex }}
+                          onClick={() => onChooseCluster(cluster.id)}
+                        >
+                          <span className="pf-intro__cluster-dot" style={{ background: cluster.color }} />
+                          {cluster.label}
+                        </button>
+                      ))}
+                      <button type="button" className="pf-intro__cluster-btn pf-intro__cluster-btn--all" onClick={onViewAllClusters}>
+                        View all
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -20,6 +20,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
 }
 
 .pf-home {
@@ -51,8 +52,27 @@
 .pf-tabs {
   display: flex;
   gap: 6px;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
+}
+
+.pf-top-search {
+  margin-left: auto;
+  width: min(320px, 30vw);
+  min-width: 190px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--text);
+  padding: 0 14px;
+  font-size: 12px;
+  outline: none;
+}
+
+.pf-top-search:focus {
+  border-color: rgba(0, 113, 227, 0.55);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.12);
 }
 
 .pf-apply-plan {
@@ -583,6 +603,26 @@
   pointer-events: none;
 }
 
+.pf-canvas-legend--collapsed {
+  gap: 0;
+}
+
+.pf-legend__collapse {
+  pointer-events: auto;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+
 .pf-canvas-context {
   position: absolute;
   left: 18px;
@@ -680,6 +720,21 @@
 
 .pf-context-chip__remove:hover {
   color: #9a3412;
+}
+
+.pf-context-chip__menu {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+}
+
+.pf-context-chip__menu:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text);
 }
 
 @media (max-width: 1120px) {
@@ -986,6 +1041,7 @@
 }
 
 .pf-side-search {
+  display: none;
   flex: 0 0 auto;
   padding: 8px 10px 10px;
   border-bottom: 1px solid var(--border);
@@ -1532,6 +1588,27 @@
   padding: 0;
 }
 
+.pf-layer-viewall {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.pf-layer-viewall--active,
+.pf-layer-viewall:hover {
+  color: var(--text);
+  border-color: rgba(0, 113, 227, 0.42);
+  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.1);
+}
+
 .pf-layer-navigator {
   display: flex;
   align-items: center;
@@ -1573,6 +1650,14 @@
   padding: 10px;
   min-height: 0;
   flex: 1 1 auto;
+}
+
+.pf-chat-scope {
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
 }
 
 .pf-chat-modes {
@@ -2148,6 +2233,103 @@
   font-size: 12px;
 }
 
+.pf-source-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+}
+
+.pf-source-page__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.pf-source-page__head h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.pf-source-page__head p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.pf-source-page__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pf-source-page__actions button,
+.pf-source-page__card > button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.pf-source-page__list {
+  display: grid;
+  gap: 12px;
+}
+
+.pf-source-page__empty,
+.pf-source-page__card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 14px;
+}
+
+.pf-source-page__card {
+  display: grid;
+  gap: 12px;
+}
+
+.pf-source-page__kind {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.pf-source-page__assign {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.pf-source-page__check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.pf-source-page__check span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf-source-page__check em {
+  color: var(--text-secondary);
+  font-style: normal;
+  font-size: 11px;
+}
+
 .pf-program__sheet {
   flex: 1 1 auto;
   min-height: 0;
@@ -2626,6 +2808,88 @@
   cursor: not-allowed;
 }
 
+.pf-intro__analysis {
+  display: grid;
+  gap: 10px;
+  padding: 14px 8px 2px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.pf-intro__analysis-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pf-intro__spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.12);
+  border-top-color: var(--accent);
+  animation: pf-spin 0.85s linear infinite;
+}
+
+.pf-intro__source-nudge {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 204, 0, 0.1);
+  border: 1px solid rgba(255, 204, 0, 0.3);
+}
+
+.pf-intro__source-nudge button,
+.pf-intro__cluster-btn {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.pf-intro__cluster-choice {
+  display: grid;
+  gap: 10px;
+}
+
+.pf-intro__cluster-choice p {
+  margin: 0;
+  color: var(--text);
+}
+
+.pf-intro__cluster-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pf-intro__cluster-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pf-intro__cluster-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.pf-intro__cluster-btn--all {
+  border-style: dashed;
+}
+
+@keyframes pf-spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes pf-intro-placeholder-pulse {
   0%,
   100% {
@@ -2883,6 +3147,28 @@
 .pf-tree-edit:hover {
   color: var(--text);
   background: rgba(0, 0, 0, 0.05);
+}
+
+.pf-tree-confirm {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pf-tree-confirm--on {
+  color: #fff;
+  border-color: rgba(52, 199, 89, 0.58);
+  background: #34c759;
 }
 
 .pf-tree-edit-modal-backdrop {

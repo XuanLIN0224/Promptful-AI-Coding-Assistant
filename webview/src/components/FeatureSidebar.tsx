@@ -337,6 +337,10 @@ export function FeatureSidebar({
   onNavigateDecisionNode,
   onRenameCluster,
   onAddCluster,
+  onViewAllLayers,
+  showAllLayers,
+  searchValue,
+  onSearchChange,
   clusters,
   composerPrompt,
   onComposerPromptChange,
@@ -378,6 +382,10 @@ export function FeatureSidebar({
   onRenameCluster?: (cluster: ClusterId) => void;
   /** Mock AI: add a generated cluster to the navigator. */
   onAddCluster?: () => void;
+  onViewAllLayers?: () => void;
+  showAllLayers?: boolean;
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
   clusters?: typeof CLUSTERS;
   /** Current composer text — included when searching “prompts”. */
   composerPrompt?: string;
@@ -404,7 +412,9 @@ export function FeatureSidebar({
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }) {
-  const [contextSearch, setContextSearch] = useState("");
+  const [localSearch, setLocalSearch] = useState("");
+  const contextSearch = searchValue ?? localSearch;
+  const setContextSearch = onSearchChange ?? setLocalSearch;
   const queryNorm = useMemo(() => norm(contextSearch), [contextSearch]);
   const filterActive = queryNorm.length > 0;
 
@@ -437,8 +447,10 @@ export function FeatureSidebar({
     () =>
       filterActive
         ? analyticsClusters.filter((cl) => matchesQuery(queryNorm, cl.label) || matchesQuery(queryNorm, cl.id))
-        : analyticsClusters,
-    [analyticsClusters, filterActive, queryNorm]
+        : showAllLayers
+          ? analyticsClusters
+          : analyticsClusters.filter((cl) => cl.id === clusterId),
+    [analyticsClusters, clusterId, filterActive, queryNorm, showAllLayers]
   );
 
   const composerMatches = useMemo(
@@ -722,14 +734,9 @@ export function FeatureSidebar({
           <section className="pf-layer-panel pf-layer-panel--clusters" aria-label="Cluster navigator">
           <div className="pf-layer-panel__head">
             <span>Cluster layers</span>
-            {onAddCluster && !filterActive ? (
-              <button type="button" className="pf-layer-add" title="Create a cluster in chat" aria-label="Create a cluster in chat" onClick={onAddCluster}>
-                +
-              </button>
-            ) : null}
           </div>
           <div className="pf-layer-navigator" aria-label="Cluster navigator">
-            {clustersForAnalytics.map((cl) => (
+            {(filterActive ? clustersForAnalytics : analyticsClusters).map((cl) => (
               <button
                 key={cl.id}
                 type="button"
@@ -740,6 +747,22 @@ export function FeatureSidebar({
                 onClick={() => onNavigateCluster?.(cl.id)}
               />
             ))}
+            {onAddCluster && !filterActive ? (
+              <button type="button" className="pf-layer-add" title="Create cluster" aria-label="Create cluster" onClick={onAddCluster}>
+                +
+              </button>
+            ) : null}
+            {onViewAllLayers ? (
+              <button
+                type="button"
+                className={`pf-layer-viewall ${showAllLayers ? "pf-layer-viewall--active" : ""}`}
+                title="View all clusters"
+                aria-label="View all clusters"
+                onClick={onViewAllLayers}
+              >
+                ⛶
+              </button>
+            ) : null}
           </div>
           <div className="pf-layer-stack">
             {clustersForAnalytics.length === 0 ? (
@@ -810,23 +833,6 @@ export function FeatureSidebar({
           <section className="pf-layer-panel pf-layer-panel--chat" aria-label="Mock assistant chat">
           <div className="pf-layer-panel__head">Chat</div>
           <div className="pf-chat-card">
-            <div className="pf-chat-modes" role="tablist" aria-label="Chat mode">
-              {([
-                ["general", "General"],
-                ["node", "Node chat"],
-                ["move", "Move node"],
-                ["create", "Create cluster"],
-              ] as const).map(([mode, label]) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={`pf-chat-mode ${chatMode === mode ? "pf-chat-mode--active" : ""}`}
-                  onClick={() => onChatModeChange?.(mode)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
             {chatMode === "move" && (
               <div className="pf-move-box" aria-label="Move node controls">
                 <div className="pf-move-row">
