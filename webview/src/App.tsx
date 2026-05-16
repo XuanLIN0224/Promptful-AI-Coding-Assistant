@@ -296,7 +296,15 @@ export default function App() {
   const [movedRootNodes, setMovedRootNodes] = useState<Partial<Record<ClusterId, DecisionOutlineItem[]>>>({});
   const [moveDraft, setMoveDraft] = useState<null | { fromCluster: ClusterId; fromNode: string; toCluster: ClusterId; toNode: string }>(null);
   const [clusterCreateDraft, setClusterCreateDraft] = useState<null | { label: string }>(null);
-  const [featureMenu, setFeatureMenu] = useState<null | { kind: "global" | "local"; id: string; label: string; top: number; left: number }>(null);
+  const [featureMenu, setFeatureMenu] = useState<null | { kind: "global" | "local"; id: string; label: string; clusterId: ClusterId; top: number; left: number }>(null);
+  const [featureActionDraft, setFeatureActionDraft] = useState<null | {
+    action: "rename" | "delete";
+    kind: "global" | "local";
+    id: string;
+    label: string;
+    draft: string;
+    clusterId: ClusterId;
+  }>(null);
   const [attachments, setAttachments] = useState<IntroAttachment[]>([]);
   const [sourceAssignments, setSourceAssignments] = useState<SourceAssignment>({});
   const [openSourceCards, setOpenSourceCards] = useState<Set<string>>(() => new Set());
@@ -1259,27 +1267,42 @@ export default function App() {
 
   const handleFeatureMenuAction = useCallback((action: "rename" | "delete") => {
     if (!featureMenu) return;
-    const scope = featureMenu.kind === "global" ? "global" : "local";
-    if (action === "rename") {
-      const next = window.prompt(`Rename ${scope} feature`, featureMenu.label);
-      if (next?.trim()) {
-        if (featureMenu.kind === "global") renameGlobalFeature(featureMenu.id, next.trim());
-        else renameLocalFeature(clusterFocus, featureMenu.id, next.trim());
-      }
-      setFeatureMenu(null);
-      return;
-    }
-    const ok = window.confirm(`Delete "${featureMenu.label}" from ${scope} features?`);
-    if (ok) {
-      if (featureMenu.kind === "global") removeGlobalFeature(featureMenu.id);
-      else removeLocalFeature(clusterFocus, featureMenu.id);
-    }
+    setFeatureActionDraft({
+      action,
+      kind: featureMenu.kind,
+      id: featureMenu.id,
+      label: featureMenu.label,
+      draft: featureMenu.label,
+      clusterId: featureMenu.clusterId,
+    });
     setFeatureMenu(null);
-  }, [clusterFocus, featureMenu, removeGlobalFeature, removeLocalFeature, renameGlobalFeature, renameLocalFeature]);
+  }, [featureMenu]);
+
+  const applyFeatureRename = useCallback(() => {
+    if (!featureActionDraft) return;
+    const next = featureActionDraft.draft.trim();
+    if (!next) return;
+    if (featureActionDraft.kind === "global") {
+      renameGlobalFeature(featureActionDraft.id, next);
+    } else {
+      renameLocalFeature(featureActionDraft.clusterId, featureActionDraft.id, next);
+    }
+    setFeatureActionDraft(null);
+  }, [featureActionDraft, renameGlobalFeature, renameLocalFeature]);
+
+  const confirmFeatureDelete = useCallback(() => {
+    if (!featureActionDraft) return;
+    if (featureActionDraft.kind === "global") {
+      removeGlobalFeature(featureActionDraft.id);
+    } else {
+      removeLocalFeature(featureActionDraft.clusterId, featureActionDraft.id);
+    }
+    setFeatureActionDraft(null);
+  }, [featureActionDraft, removeGlobalFeature, removeLocalFeature]);
 
   const openFeatureMenu = useCallback((
     event: MouseEvent<HTMLButtonElement>,
-    feature: { kind: "global" | "local"; id: string; label: string }
+    feature: { kind: "global" | "local"; id: string; label: string; clusterId?: ClusterId }
   ) => {
     event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -1291,9 +1314,9 @@ export default function App() {
     setFeatureMenu((prev) => (
       prev?.id === feature.id && prev.kind === feature.kind
         ? null
-        : { ...feature, top, left }
+        : { ...feature, clusterId: feature.clusterId ?? clusterFocus, top, left }
     ));
-  }, []);
+  }, [clusterFocus]);
 
   const createNamedCluster = useCallback(() => {
     const label = clusterCreateDraft?.label.trim();
@@ -1365,6 +1388,59 @@ export default function App() {
           </button>
         </div>,
         document.body
+      )}
+      {featureActionDraft?.action === "rename" && (
+        <div className="pf-link-modal-backdrop" role="presentation" onMouseDown={() => setFeatureActionDraft(null)}>
+          <div
+            className="pf-link-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pf-feature-rename-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div id="pf-feature-rename-title" className="pf-link-modal__title">Rename feature</div>
+            <label className="pf-tree-edit-modal__field">
+              <span>{featureActionDraft.kind === "global" ? "Global feature" : "Local feature"}</span>
+              <input
+                value={featureActionDraft.draft}
+                autoFocus
+                onChange={(event) => setFeatureActionDraft((prev) => (prev ? { ...prev, draft: event.target.value } : prev))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") applyFeatureRename();
+                  if (event.key === "Escape") setFeatureActionDraft(null);
+                }}
+              />
+            </label>
+            <div className="pf-link-modal__actions">
+              <button type="button" className="pf-link-modal__cancel" onClick={() => setFeatureActionDraft(null)}>Cancel</button>
+              <button type="button" className="pf-link-modal__confirm" onClick={applyFeatureRename} disabled={!featureActionDraft.draft.trim()}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {featureActionDraft?.action === "delete" && (
+        <div className="pf-link-modal-backdrop" role="presentation" onMouseDown={() => setFeatureActionDraft(null)}>
+          <div
+            className="pf-link-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pf-feature-delete-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div id="pf-feature-delete-title" className="pf-link-modal__title">Delete feature?</div>
+            <p className="pf-link-modal__body">
+              Delete <strong>{featureActionDraft.label}</strong> from {featureActionDraft.kind === "global" ? "global" : "local"} features?
+            </p>
+            <div className="pf-link-modal__actions">
+              <button type="button" className="pf-link-modal__cancel" onClick={() => setFeatureActionDraft(null)}>Cancel</button>
+              <button type="button" className="pf-link-modal__confirm pf-link-modal__confirm--danger" onClick={confirmFeatureDelete}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {linkCaptureOpen && (
         <div className="pf-link-modal-backdrop" role="presentation" onMouseDown={closeLinkCapture}>
