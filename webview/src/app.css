@@ -1597,6 +1597,13 @@
   flex-direction: column;
 }
 
+.pf-layer-panel--clusters {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 .pf-layer-panel__head {
   display: flex;
   align-items: center;
@@ -1676,13 +1683,11 @@
   align-content: start;
   gap: 8px;
   padding: 10px;
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  flex: 0 0 auto;
+  min-height: max-content;
+  max-height: none;
+  overflow: visible;
+  padding-bottom: 18px;
 }
 
 .pf-chat-card {
