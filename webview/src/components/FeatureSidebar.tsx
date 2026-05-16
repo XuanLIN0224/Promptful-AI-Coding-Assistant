@@ -483,6 +483,8 @@ export function FeatureSidebar({
   const [moveFromNode, setMoveFromNode] = useState(firstNode);
   const [moveToCluster, setMoveToCluster] = useState<ClusterId>(firstCluster);
   const [moveToNode, setMoveToNode] = useState(firstNode);
+  const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
+  const [closedLayerNodeIds, setClosedLayerNodeIds] = useState<Set<string>>(() => new Set());
   const chatHistoryRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -506,11 +508,33 @@ export function FeatureSidebar({
     if (toNodes.length > 0 && !toNodes.some((node) => node.nodeId === moveToNode)) setMoveToNode(toNodes[0].nodeId);
   }, [decisionOutline, moveFromCluster, moveFromNode, moveToCluster, moveToNode]);
 
+  useEffect(() => {
+    setClosedLayerNodeIds((prev) => {
+      const next = new Set(prev);
+      for (const nodes of Object.values(decisionOutline ?? {})) {
+        nodes?.forEach((item, index) => {
+          const hasChildren = Boolean(nodes[index + 1] && nodes[index + 1].depth > item.depth);
+          if (hasChildren && item.depth > 0 && !next.has(item.nodeId)) next.add(item.nodeId);
+        });
+      }
+      return next;
+    });
+  }, [decisionOutline]);
+
   const toggleLayer = (id: ClusterId) => {
     setOpenLayerIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleLayerNode = (nodeId: string) => {
+    setClosedLayerNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
       return next;
     });
   };
@@ -773,6 +797,16 @@ export function FeatureSidebar({
                 const nodes = (decisionOutline?.[cl.id] ?? []).filter((item) =>
                   filterActive ? matchesQuery(queryNorm, item.title) || matchesQuery(queryNorm, item.summary) || matchesQuery(queryNorm, cl.label) : true
                 );
+                const nodeRows: Array<{ item: DecisionOutlineItem; hasChildren: boolean; folded: boolean }> = [];
+                let hiddenBelowDepth: number | null = null;
+                nodes.forEach((item, index) => {
+                  if (hiddenBelowDepth !== null && item.depth > hiddenBelowDepth) return;
+                  if (hiddenBelowDepth !== null && item.depth <= hiddenBelowDepth) hiddenBelowDepth = null;
+                  const hasChildren = Boolean(nodes[index + 1] && nodes[index + 1].depth > item.depth);
+                  const folded = hasChildren && closedLayerNodeIds.has(item.nodeId);
+                  nodeRows.push({ item, hasChildren, folded });
+                  if (folded) hiddenBelowDepth = item.depth;
+                });
                 const open = openLayerIds.has(cl.id);
                 return (
                   <div key={cl.id} className={`pf-layer ${cl.id === clusterId ? "pf-layer--active" : ""}`}>
@@ -802,18 +836,31 @@ export function FeatureSidebar({
                         {nodes.length === 0 ? (
                           <div className="pf-layer__empty">No matching nodes</div>
                         ) : (
-                          nodes.map((item) => (
-                            <button
+                          nodeRows.map(({ item, hasChildren, folded }) => (
+                            <div
                               key={item.nodeId}
-                              type="button"
                               className={`pf-layer-node ${activeNodeId === item.nodeId ? "pf-layer-node--active" : ""}`}
-                              style={{ paddingLeft: 12 + item.depth * 12 }}
+                              style={{ paddingLeft: 8 + item.depth * 12 }}
                               title={item.summary}
-                              onClick={() => onNavigateDecisionNode?.(cl.id, item)}
                             >
-                              <span className="pf-layer-node__name">{item.title}</span>
-                              <span className="pf-layer-node__meta">{item.depth === 0 ? "root" : "node"}</span>
-                            </button>
+                              <button
+                                type="button"
+                                className={`pf-layer-node__fold ${hasChildren ? "" : "pf-layer-node__fold--blank"}`}
+                                aria-label={folded ? `Expand ${item.title}` : `Collapse ${item.title}`}
+                                disabled={!hasChildren}
+                                onClick={() => toggleLayerNode(item.nodeId)}
+                              >
+                                {hasChildren ? (folded ? "›" : "⌄") : ""}
+                              </button>
+                              <button
+                                type="button"
+                                className="pf-layer-node__hit"
+                                onClick={() => onNavigateDecisionNode?.(cl.id, item)}
+                              >
+                                <span className="pf-layer-node__name">{item.title}</span>
+                                <span className="pf-layer-node__meta">{item.depth === 0 ? "root" : "node"}</span>
+                              </button>
+                            </div>
                           ))
                         )}
                       </div>
@@ -834,22 +881,6 @@ export function FeatureSidebar({
           <section className="pf-layer-panel pf-layer-panel--chat" aria-label="Mock assistant chat">
           <div className="pf-layer-panel__head">Chat</div>
           <div className="pf-chat-card">
-            <div className="pf-chat-tools" aria-label="Chat tools">
-              <button type="button" className="pf-chat-tool" onClick={() => onAddSource("link")}>
-                Add link
-              </button>
-              <button type="button" className="pf-chat-tool" onClick={() => onAddSource("upload")}>
-                Upload source
-              </button>
-              <label className={`pf-chat-tool pf-chat-tool--toggle ${expandNodeTool ? "pf-chat-tool--on" : ""}`}>
-                <input
-                  type="checkbox"
-                  checked={expandNodeTool}
-                  onChange={(event) => onExpandNodeToolChange(event.target.checked)}
-                />
-                <span>Expand node</span>
-              </label>
-            </div>
             {sources.length > 0 && (
               <div className="pf-chat-sources" aria-label="Sources added to chat">
                 {sources.slice(0, 4).map((s) => (
@@ -919,9 +950,55 @@ export function FeatureSidebar({
                 placeholder={chatMode === "create" ? "Describe the cluster to create..." : chatMode === "move" ? "Describe why this move is needed..." : "Ask a mock follow-up..."}
                 rows={3}
               />
-              <button type="button" onClick={onComposerSubmit} disabled={!composerPrompt?.trim()}>
-                Send
-              </button>
+              <div className="pf-chat-input__side">
+                <div className="pf-chat-source-menu">
+                  <button
+                    type="button"
+                    className="pf-chat-plus"
+                    aria-label="Add source"
+                    aria-expanded={sourceMenuOpen}
+                    onClick={() => setSourceMenuOpen((open) => !open)}
+                  >
+                    +
+                  </button>
+                  {sourceMenuOpen && (
+                    <div className="pf-chat-source-menu__pop" role="menu">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setSourceMenuOpen(false);
+                          onAddSource("link");
+                        }}
+                      >
+                        Add link
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setSourceMenuOpen(false);
+                          onAddSource("upload");
+                        }}
+                      >
+                        Add file
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <label className={`pf-chat-expand-switch ${expandNodeTool ? "pf-chat-expand-switch--on" : ""}`} title="Expand node">
+                  <input
+                    type="checkbox"
+                    checked={expandNodeTool}
+                    onChange={(event) => onExpandNodeToolChange(event.target.checked)}
+                  />
+                  <span aria-hidden />
+                  <em>Expand</em>
+                </label>
+                <button type="button" onClick={onComposerSubmit} disabled={!composerPrompt?.trim()}>
+                  Send
+                </button>
+              </div>
             </div>
           </div>
           </section>

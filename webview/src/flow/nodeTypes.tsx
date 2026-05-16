@@ -160,13 +160,14 @@ function TreeConfirmBox({ checked, onToggle }: { checked?: boolean; onToggle?: (
       className={`pf-tree-confirm nodrag ${checked ? "pf-tree-confirm--on" : ""}`}
       aria-label={checked ? "Unconfirm decision" : "Confirm decision"}
       title={checked ? "Included in confirmed plan" : "Include in confirmed plan"}
+      aria-pressed={checked}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation();
         onToggle?.();
       }}
     >
-      {checked ? "✓" : ""}
+      <span aria-hidden />
     </button>
   );
 }

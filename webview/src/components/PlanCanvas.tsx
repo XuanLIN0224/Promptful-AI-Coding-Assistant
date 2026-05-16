@@ -395,6 +395,10 @@ function Inner({
       const inst = flowInstanceRef.current;
       if (!inst) return;
       if (isOverview) {
+        if (showAllClusters) {
+          void inst.fitView({ padding: 0.18, maxZoom: 0.82, duration });
+          return;
+        }
         const kind = planClusterFocus as PlanTreeKind;
         const candidates = nodesArgForClusterFit(kind, inst.getNodes()).filter(({ id }) => {
           const node = inst.getNode(id);
@@ -406,7 +410,7 @@ function Inner({
       }
       void inst.fitView({ padding: 0.32, duration });
     },
-    [isOverview, planClusterFocus]
+    [isOverview, planClusterFocus, showAllClusters]
   );
 
   useEffect(() => {

@@ -498,6 +498,7 @@ export default function App() {
     setTab("plan");
     setPlanMode("overview");
     setShowAllClusters(true);
+    setPlanTreeSelections({});
     setActiveContext(null);
     setChatMode("general");
     setAssistantLine("General project view opened. The mock assistant will answer across all clusters.");
@@ -682,6 +683,17 @@ export default function App() {
     setFeaturesOpen(true);
     setActiveContext({ kind: request.target, id: featureId });
     setAssistantLine(`Added "${feature.label}" to ${request.target} features.`);
+  }, []);
+
+  const toggleShowAllClusters = useCallback(() => {
+    setShowAllClusters((value) => {
+      const next = !value;
+      if (next) {
+        setPlanTreeSelections({});
+        setActiveContext(null);
+      }
+      return next;
+    });
   }, []);
 
   const handleClusterComplete = useCallback((kind: PlanTreeKind) => {
@@ -1010,8 +1022,17 @@ export default function App() {
     const additions: DynamicDecisionNode[] = Array.from({ length: count }, (_, index) => ({
       clusterId,
       nodeId: `${prefix}-ai-${timestamp}-${index}`,
-      title: expansionTitle(text, index),
-      summary: expansionSummary(text, clusterLabel(clusterId), index),
+      ...(
+        clusterId === "budgeting" && nodeId === "bu-root" && index === 0
+          ? {
+              title: "Income streams",
+              summary: "Track salary, irregular income, and household contributions so monthly budgets can be judged against money coming in.",
+            }
+          : {
+              title: expansionTitle(text, index),
+              summary: expansionSummary(text, clusterLabel(clusterId), index),
+            }
+      ),
       depth: (parent?.depth ?? 0) + 1,
       parentNodeId: nodeId,
     }));
@@ -1657,7 +1678,7 @@ export default function App() {
                     onPlanTreeSelectionsChange={handlePlanTreeSelectionsChange}
                     onClusterFocusChange={setClusterFocus}
                     showAllClusters={showAllClusters}
-                    onToggleShowAllClusters={() => setShowAllClusters((value) => !value)}
+                    onToggleShowAllClusters={toggleShowAllClusters}
                     savedViewport={savedPlanViewport}
                     onViewportSave={handlePlanViewportSave}
                     onGenerateFeatures={handleGenerateFeatures}
