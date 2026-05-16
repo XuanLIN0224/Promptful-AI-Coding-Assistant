@@ -141,3 +141,12 @@ export interface MockPromptRecord {
   clusterId: ClusterId;
   createdAt: number;
 }
+
+export interface DynamicDecisionNode {
+  clusterId: ClusterId;
+  nodeId: string;
+  title: string;
+  summary: string;
+  depth: number;
+  parentNodeId?: string;
+}

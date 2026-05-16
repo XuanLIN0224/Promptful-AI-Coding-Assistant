@@ -1652,6 +1652,91 @@
   flex: 1 1 auto;
 }
 
+.pf-chat-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.pf-chat-tool {
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(250, 250, 250, 0.86);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 750;
+  padding: 6px 10px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.pf-chat-tool:hover {
+  border-color: rgba(0, 113, 227, 0.36);
+  color: var(--text);
+}
+
+.pf-chat-tool--toggle {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  user-select: none;
+}
+
+.pf-chat-tool--toggle input {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+}
+
+.pf-chat-tool--on {
+  color: var(--accent);
+  border-color: rgba(0, 113, 227, 0.34);
+  background: rgba(0, 113, 227, 0.08);
+}
+
+.pf-chat-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pf-chat-source {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 4px 7px;
+}
+
+.pf-chat-source span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 128px;
+}
+
+.pf-chat-source button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  padding: 0;
+  cursor: pointer;
+}
+
+.pf-chat-source--more {
+  padding: 5px 8px;
+  font-weight: 800;
+}
+
 .pf-chat-scope {
   font-size: 11px;
   font-weight: 750;

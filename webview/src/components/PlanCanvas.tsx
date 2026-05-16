@@ -48,7 +48,7 @@ import {
   pathNodeIdsFromRootResolved,
   resolvedParentForNode,
 } from "../treePath";
-import type { ClusterFrameData, ClusterId, DecisionNodePayload, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode } from "../types";
+import type { ClusterFrameData, ClusterId, DecisionNodePayload, DynamicDecisionNode, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode } from "../types";
 import { CLUSTERS } from "../types";
 
 const planEdgeTypes = { fileGraphCenter: FileGraphCenterEdge };
@@ -146,6 +146,58 @@ function contentBoundsForKind(nodes: readonly Node[], kind: PlanTreeKind): { min
   );
 }
 
+function rootIdForKind(kind: PlanTreeKind): string {
+  return [...PLAN_CLUSTER_TREE_ROOT_IDS].find((rootId) => kindFromNodeId(rootId) === kind) ?? `${kind}-root`;
+}
+
+function applyRootOnlyClusters(
+  base: { nodes: Node[]; edges: Edge[] },
+  rootOnlyClusterIds: readonly ClusterId[],
+  clusterLabels: Partial<Record<ClusterId, string>>
+): { nodes: Node[]; edges: Edge[] } {
+  const rootOnly = new Set(rootOnlyClusterIds);
+  if (rootOnly.size === 0) return base;
+  const rootIds = new Set([...rootOnly].map((kind) => rootIdForKind(kind)));
+  const nodes = base.nodes
+    .filter((node) => {
+      const kind = nodeKind(node);
+      if (!kind || !rootOnly.has(kind)) return true;
+      return node.type === "clusterFrame" || rootIds.has(node.id);
+    })
+    .map((node) => {
+      const kind = nodeKind(node);
+      if (!kind || !rootOnly.has(kind)) return node;
+      if (node.type === "decision" || node.type === "branch") {
+        const data = node.data as DecisionNodePayload;
+        return {
+          ...node,
+          type: "decision",
+          data: {
+            ...data,
+            title: clusterLabels[kind] ?? data.title,
+            summary: "Empty root node. Prompt this node to generate the first decision tree.",
+            options: [],
+            confirmed: false,
+          },
+        } as Node<DecisionNodePayload>;
+      }
+      if (node.type === "clusterFrame") {
+        const data = node.data as ClusterFrameData;
+        return {
+          ...node,
+          data: { ...data, label: clusterLabels[kind] ?? data.label },
+        } as Node<ClusterFrameData>;
+      }
+      return node;
+    });
+  const edges = base.edges.filter((edge) => {
+    const sourceKind = kindFromNodeId(String(edge.source));
+    const targetKind = kindFromNodeId(String(edge.target));
+    return !(sourceKind && rootOnly.has(sourceKind)) && !(targetKind && rootOnly.has(targetKind));
+  });
+  return { nodes: layoutClusterFramesForOverview(nodes), edges };
+}
+
 function appendMovedRootNodes(base: { nodes: Node[]; edges: Edge[] }, movedRootNodes: Partial<Record<ClusterId, DecisionOutlineItem[]>>): { nodes: Node[]; edges: Edge[] } {
   const extra: Node<DecisionNodePayload>[] = [];
   const extraEdges: Edge[] = [];
@@ -187,6 +239,56 @@ function appendMovedRootNodes(base: { nodes: Node[]; edges: Edge[] }, movedRootN
   return extra.length > 0 ? { nodes: [...base.nodes, ...extra], edges: [...base.edges, ...extraEdges] } : base;
 }
 
+function appendDynamicDecisionNodes(base: { nodes: Node[]; edges: Edge[] }, dynamicNodes: Partial<Record<ClusterId, DynamicDecisionNode[]>>): { nodes: Node[]; edges: Edge[] } {
+  const extra: Node<DecisionNodePayload>[] = [];
+  const extraEdges: Edge[] = [];
+  const childCounts = new Map<string, number>();
+
+  for (const [kind, items] of Object.entries(dynamicNodes) as [PlanTreeKind, DynamicDecisionNode[]][]) {
+    const bounds = contentBoundsForKind([...base.nodes, ...extra], kind);
+    let rootOffset = 0;
+    for (const item of items) {
+      const parentId = item.parentNodeId;
+      const parent = parentId ? [...base.nodes, ...extra].find((node) => node.id === parentId) : undefined;
+      const siblingIndex = parentId ? childCounts.get(parentId) ?? 0 : rootOffset;
+      if (parentId) childCounts.set(parentId, siblingIndex + 1);
+      else rootOffset += 1;
+
+      const parentWidth = Number((parent?.style as { width?: number } | undefined)?.width ?? parent?.width ?? 260);
+      const xNudge = siblingIndex === 0 ? -160 : siblingIndex === 1 ? 170 : -160 + siblingIndex * 170;
+      const position = parent
+        ? { x: parent.position.x + xNudge + parentWidth * 0.16, y: parent.position.y + 190 + Math.floor(siblingIndex / 2) * 130 }
+        : { x: bounds ? bounds.minX + rootOffset * 42 : 120, y: bounds ? bounds.maxY + 120 + rootOffset * 150 : 120 };
+
+      extra.push({
+        id: item.nodeId,
+        type: item.depth === 0 ? "decision" : "branch",
+        position,
+        data: {
+          title: item.title,
+          summary: item.summary,
+          clusterId: kind,
+          planSourceTabId: "security-ts",
+          sources: [{ id: `s-${item.nodeId}-prompt`, label: "Participant expansion prompt", kind: "prompt" }],
+        },
+        draggable: true,
+        zIndex: 1,
+      });
+      if (parentId) {
+        extraEdges.push({
+          id: `dynamic-edge-${parentId}-${item.nodeId}`,
+          source: parentId,
+          target: item.nodeId,
+          type: "smoothstep",
+          animated: false,
+        });
+      }
+    }
+  }
+
+  return extra.length > 0 ? { nodes: [...base.nodes, ...extra], edges: [...base.edges, ...extraEdges] } : base;
+}
+
 function fileGraphPack(): { nodes: Node[]; edges: Edge[] } {
   const baseNodes = fileGraphNodes as Node<FileGraphPayload>[];
   const positions = computeFileGraphLayout(baseNodes, fileGraphEdges);
@@ -220,6 +322,8 @@ function Inner({
   onGenerateFeatures,
   generatedFeatureNodeIds,
   movedRootNodes,
+  dynamicDecisionNodes,
+  rootOnlyClusterIds,
   chatPromptCounts,
   confirmedNodeIds,
   onToggleConfirmNode,
@@ -245,6 +349,8 @@ function Inner({
   onGenerateFeatures: (request: GeneratedFeatureRequest) => void;
   generatedFeatureNodeIds: ReadonlySet<string>;
   movedRootNodes: Partial<Record<ClusterId, DecisionOutlineItem[]>>;
+  dynamicDecisionNodes: Partial<Record<ClusterId, DynamicDecisionNode[]>>;
+  rootOnlyClusterIds: readonly ClusterId[];
   chatPromptCounts: Record<string, number>;
   confirmedNodeIds: ReadonlySet<string>;
   onToggleConfirmNode: (nodeId: string) => void;
@@ -255,7 +361,11 @@ function Inner({
 }) {
   const isOverview = mode === "overview";
   const isGraph = mode === "nodegraph";
-  const overviewPack = useMemo(() => appendMovedRootNodes(clusterOverviewPack(enabledClusterIds), movedRootNodes), [enabledClusterIds, movedRootNodes]);
+  const overviewPack = useMemo(() => {
+    const rootScoped = applyRootOnlyClusters(clusterOverviewPack(enabledClusterIds), rootOnlyClusterIds, clusterLabels);
+    const withMoved = appendMovedRootNodes(rootScoped, movedRootNodes);
+    return appendDynamicDecisionNodes(withMoved, dynamicDecisionNodes);
+  }, [enabledClusterIds, rootOnlyClusterIds, clusterLabels, movedRootNodes, dynamicDecisionNodes]);
   const enabledClusterSet = useMemo(() => new Set(enabledClusterIds), [enabledClusterIds]);
   const graphPack = useMemo(() => fileGraphPack(), []);
   const allTreeParents = useMemo(() => parentIdsFromEdges(overviewPack.edges), [overviewPack.edges]);
@@ -528,12 +638,14 @@ function Inner({
         summary: string;
         clusterId: GeneratedFeatureRequest["clusterId"];
       };
+      const rootTitleOverride = PLAN_CLUSTER_TREE_ROOT_IDS.has(n.id) ? clusterLabels[treeKind] : undefined;
       return {
         ...n,
         hidden,
         zIndex: 1,
         data: {
           ...(n.data as object),
+          ...(rootTitleOverride ? { title: rootTitleOverride } : {}),
           ...(nodeTextEdits[n.id] ?? {}),
           treeCommitted: committed,
           treeHoverPath: !committed && (hoverSet?.has(n.id) ?? false),
@@ -693,7 +805,8 @@ function Inner({
       const kind = kindFromNodeId(node.id) ?? (node.data as Partial<DecisionNodePayload>).clusterId;
       if (!kind) return;
       const childCount = (childrenByParent(edges).get(node.id) ?? []).length;
-      const isTerminal = childCount === 0 || Boolean((node.data as { confirmed?: boolean }).confirmed);
+      const isRootOnlyKind = rootOnlyClusterIds.includes(kind);
+      const isTerminal = !isRootOnlyKind && (childCount === 0 || Boolean((node.data as { confirmed?: boolean }).confirmed));
 
       const candidates = (incomingParents.get(node.id) ?? []).filter((p) => kindFromNodeId(p) === kind);
       let nextParentChoiceForKind = treeParentChoiceByKind[kind] ?? {};
@@ -754,6 +867,7 @@ function Inner({
       planTreeSelections,
       treeParentChoiceByKind,
       onClusterFocusChange,
+      rootOnlyClusterIds,
     ]
   );
 
@@ -924,6 +1038,8 @@ export function PlanCanvas({
   onGenerateFeatures,
   generatedFeatureNodeIds,
   movedRootNodes,
+  dynamicDecisionNodes,
+  rootOnlyClusterIds,
   chatPromptCounts,
   confirmedNodeIds,
   onToggleConfirmNode,
@@ -949,6 +1065,8 @@ export function PlanCanvas({
   onGenerateFeatures: (request: GeneratedFeatureRequest) => void;
   generatedFeatureNodeIds: ReadonlySet<string>;
   movedRootNodes: Partial<Record<ClusterId, DecisionOutlineItem[]>>;
+  dynamicDecisionNodes: Partial<Record<ClusterId, DynamicDecisionNode[]>>;
+  rootOnlyClusterIds: readonly ClusterId[];
   chatPromptCounts: Record<string, number>;
   confirmedNodeIds: ReadonlySet<string>;
   onToggleConfirmNode: (nodeId: string) => void;
@@ -980,6 +1098,8 @@ export function PlanCanvas({
             onGenerateFeatures={onGenerateFeatures}
             generatedFeatureNodeIds={generatedFeatureNodeIds}
             movedRootNodes={movedRootNodes}
+            dynamicDecisionNodes={dynamicDecisionNodes}
+            rootOnlyClusterIds={rootOnlyClusterIds}
             chatPromptCounts={chatPromptCounts}
             confirmedNodeIds={confirmedNodeIds}
             onToggleConfirmNode={onToggleConfirmNode}

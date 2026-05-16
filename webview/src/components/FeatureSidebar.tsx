@@ -356,6 +356,9 @@ export function FeatureSidebar({
   onSelectContext,
   onOpenSource,
   onRemoveSource,
+  onAddSource,
+  expandNodeTool,
+  onExpandNodeToolChange,
   onRenameGlobal,
   onRemoveGlobal,
   onRenameLocal,
@@ -405,6 +408,9 @@ export function FeatureSidebar({
   onSelectContext: (ctx: { kind: "global" | "local"; id: string }) => void;
   onOpenSource: (attachmentId: string) => void;
   onRemoveSource: (attachmentId: string) => void;
+  onAddSource: (kind: "link" | "upload") => void;
+  expandNodeTool: boolean;
+  onExpandNodeToolChange: (value: boolean) => void;
   onRenameGlobal: (featureId: string, label: string) => void;
   onRemoveGlobal: (featureId: string) => void;
   onRenameLocal: (cluster: ClusterId, featureId: string, label: string) => void;
@@ -430,11 +436,6 @@ export function FeatureSidebar({
   const localFiltered = useMemo(
     () => (filterActive ? localItems.filter((i) => matchesQuery(queryNorm, i.label)) : localItems),
     [localItems, filterActive, queryNorm]
-  );
-
-  const sourcesFiltered = useMemo(
-    () => (filterActive ? sources.filter((s) => matchesQuery(queryNorm, s.label)) : sources),
-    [sources, filterActive, queryNorm]
   );
 
   const programFilesFiltered = useMemo(() => {
@@ -829,10 +830,42 @@ export function FeatureSidebar({
           <span />
         </PanelResizeHandle>
 
-        <Panel defaultSize={34} minSize={24} className="pf-side-panel-slot">
+        <Panel defaultSize={54} minSize={24} className="pf-side-panel-slot">
           <section className="pf-layer-panel pf-layer-panel--chat" aria-label="Mock assistant chat">
           <div className="pf-layer-panel__head">Chat</div>
           <div className="pf-chat-card">
+            <div className="pf-chat-tools" aria-label="Chat tools">
+              <button type="button" className="pf-chat-tool" onClick={() => onAddSource("link")}>
+                Add link
+              </button>
+              <button type="button" className="pf-chat-tool" onClick={() => onAddSource("upload")}>
+                Upload source
+              </button>
+              <label className={`pf-chat-tool pf-chat-tool--toggle ${expandNodeTool ? "pf-chat-tool--on" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={expandNodeTool}
+                  onChange={(event) => onExpandNodeToolChange(event.target.checked)}
+                />
+                <span>Expand node</span>
+              </label>
+            </div>
+            {sources.length > 0 && (
+              <div className="pf-chat-sources" aria-label="Sources added to chat">
+                {sources.slice(0, 4).map((s) => (
+                  <span key={s.id} className="pf-chat-source">
+                    <button type="button" onClick={() => onOpenSource(s.id)} title={s.label}>
+                      {s.kind}
+                    </button>
+                    <span>{s.label}</span>
+                    <button type="button" aria-label={`Remove ${s.label}`} onClick={() => onRemoveSource(s.id)}>
+                      ×
+                    </button>
+                  </span>
+                ))}
+                {sources.length > 4 ? <span className="pf-chat-source pf-chat-source--more">+{sources.length - 4}</span> : null}
+              </div>
+            )}
             {chatMode === "move" && (
               <div className="pf-move-box" aria-label="Move node controls">
                 <div className="pf-move-row">
@@ -894,43 +927,6 @@ export function FeatureSidebar({
           </section>
         </Panel>
 
-        <PanelResizeHandle className="pf-side-resizer" aria-label="Resize chat and source panels">
-          <span />
-        </PanelResizeHandle>
-
-        <Panel defaultSize={20} minSize={10} className="pf-side-panel-slot">
-          <section className="pf-layer-panel pf-layer-panel--source" aria-label="Sources">
-          <div className="pf-layer-panel__head">Source</div>
-          <div className="pf-source-list">
-            {!filterActive && sources.length === 0 ? (
-              <div className="pf-source-empty">No resources yet.</div>
-            ) : filterActive && sourcesFiltered.length === 0 ? (
-              <div className="pf-source-empty">No matches</div>
-            ) : (
-              (filterActive ? sourcesFiltered : sources).map((s) => (
-                <div key={s.id} className="pf-source-item" title={s.label}>
-                  <button type="button" className="pf-source-item__hit" onClick={() => onOpenSource(s.id)} aria-label={`Open source ${s.label}`}>
-                    <span className="pf-source-item__kind">{s.kind.toUpperCase()}</span>
-                    <span className="pf-source-item__label">{s.label}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="pf-source-item__remove"
-                    aria-label={`Remove ${s.label}`}
-                    title="Remove from sources"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRemoveSource(s.id);
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-          </section>
-        </Panel>
       </PanelGroup>
     </aside>
     </>

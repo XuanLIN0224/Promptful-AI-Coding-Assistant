@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type SetStateAction } from "react";
 import type { OnSelectionChangeParams, Viewport } from "@xyflow/react";
-import type { ClusterId, DecisionNodePayload, FeatureItem, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode, WorkspaceTab } from "./types";
+import type { ClusterId, DecisionNodePayload, DynamicDecisionNode, FeatureItem, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode, WorkspaceTab } from "./types";
 import { CLUSTERS } from "./types";
 import { FeatureSidebar } from "./components/FeatureSidebar";
 import { IntroOverlay } from "./components/IntroOverlay";
@@ -221,6 +221,45 @@ function generalPromptReply(text: string): string {
   return "Mock reply: I would compare this prompt against prior decisions, identify whether it is local or global, then offer one high-confidence next step and one lower-confidence alternative.";
 }
 
+function rootOnlyOutlineItem(clusterId: ClusterId, label: string): DecisionOutlineItem {
+  const root = decisionOutlineForCluster(clusterId)[0];
+  return {
+    clusterId,
+    nodeId: root?.nodeId ?? `${nodePrefixForCluster(clusterId)}-root`,
+    title: label,
+    summary: "Empty root node. Prompt this node to generate the first decision tree.",
+    depth: 0,
+  };
+}
+
+function outlineHasDirectChild(outline: readonly DecisionOutlineItem[], nodeId: string): boolean {
+  const index = outline.findIndex((item) => item.nodeId === nodeId);
+  if (index < 0) return false;
+  const depth = outline[index].depth;
+  const next = outline[index + 1];
+  return Boolean(next && next.depth > depth);
+}
+
+function expansionTitle(seed: string, index: number): string {
+  const cleaned = seed
+    .replace(/[^a-z0-9\s-]/gi, " ")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 3)
+    .join(" ");
+  const base = cleaned || (index === 0 ? "Generated option" : "Alternative option");
+  const confidence = index === 0 ? 64 : 36;
+  return `${base.toUpperCase()} - ${confidence}%`;
+}
+
+function expansionSummary(promptText: string, clusterLabel: string, index: number): string {
+  const topic = promptText.trim() || "the participant prompt";
+  if (index === 0) {
+    return `Mock AI expands "${topic}" into a concrete ${clusterLabel} decision for participant review.`;
+  }
+  return `Alternative branch keeps the same prompt visible, but asks whether the decision should stay local before code is generated.`;
+}
+
 export default function App() {
   const [showIntro, setShowIntro] = useState(true);
   const [tab, setTab] = useState<WorkspaceTab>("plan");
@@ -237,6 +276,8 @@ export default function App() {
   const [completedClusterIds, setCompletedClusterIds] = useState<Set<PlanTreeKind>>(() => new Set());
   const [generatedFeatureNodeIds, setGeneratedFeatureNodeIds] = useState<Set<string>>(() => new Set());
   const [generatedClusterIds, setGeneratedClusterIds] = useState<ClusterId[]>([]);
+  const [generatedClusterTreeReady, setGeneratedClusterTreeReady] = useState<Set<ClusterId>>(() => new Set());
+  const [dynamicDecisionNodes, setDynamicDecisionNodes] = useState<Partial<Record<ClusterId, DynamicDecisionNode[]>>>({});
   const [clusterLabelOverrides, setClusterLabelOverrides] = useState<Partial<Record<ClusterId, string>>>({});
   const [clusterRenameDraft, setClusterRenameDraft] = useState<null | { id: ClusterId; label: string }>(null);
   const [planApplied, setPlanApplied] = useState(false);
@@ -248,6 +289,7 @@ export default function App() {
   const [scopeLabel, setScopeLabel] = useState<string | null>("Terminus");
   const [prompt, setPrompt] = useState("");
   const [chatMode, setChatMode] = useState<ChatMode>("general");
+  const [expandNodeTool, setExpandNodeTool] = useState(false);
   const [canvasContextOpen, setCanvasContextOpen] = useState({ global: true, local: true });
   const [confirmedNodeIds, setConfirmedNodeIds] = useState<Set<string>>(() => new Set());
   const [movedRootNodes, setMovedRootNodes] = useState<Partial<Record<ClusterId, DecisionOutlineItem[]>>>({});
@@ -290,15 +332,24 @@ export default function App() {
     (cluster: ClusterId) => clusterLabelOverrides[cluster]?.trim() || CLUSTERS.find((c) => c.id === cluster)?.label || "Cluster",
     [clusterLabelOverrides]
   );
+  const rootOnlyClusterIds = useMemo(
+    () => generatedClusterIds.filter((cluster) => !generatedClusterTreeReady.has(cluster)),
+    [generatedClusterIds, generatedClusterTreeReady]
+  );
   const decisionOutline = useMemo(
     () =>
       Object.fromEntries(
         visibleClusterIds.map((kind) => {
           const moved = movedRootNodes[kind] ?? [];
-          return [kind, [...moved, ...decisionOutlineForCluster(kind)]];
+          const base = rootOnlyClusterIds.includes(kind)
+            ? [rootOnlyOutlineItem(kind, clusterLabel(kind))]
+            : decisionOutlineForCluster(kind).map((item, index) =>
+                index === 0 && clusterLabelOverrides[kind] ? { ...item, title: clusterLabel(kind) } : item
+              );
+          return [kind, [...moved, ...base, ...(dynamicDecisionNodes[kind] ?? [])]];
         })
       ) as Partial<Record<ClusterId, DecisionOutlineItem[]>>,
-    [movedRootNodes, visibleClusterIds]
+    [clusterLabel, clusterLabelOverrides, dynamicDecisionNodes, movedRootNodes, rootOnlyClusterIds, visibleClusterIds]
   );
 
   const completedClusterCount = visibleClusterIds.filter((kind) => completedClusterIds.has(kind)).length;
@@ -363,7 +414,10 @@ export default function App() {
       let changed = false;
       visibleClusterIds.forEach((kind) => {
         const selection = planTreeSelections[kind] ?? null;
-        const complete = selection ? terminalNodeIdsForKind(kind).has(selection) : false;
+        const outline = decisionOutline[kind] ?? [];
+        const complete = selection
+          ? !rootOnlyClusterIds.includes(kind) && (terminalNodeIdsForKind(kind).has(selection) || !outlineHasDirectChild(outline, selection))
+          : false;
         if (complete && !next.has(kind)) {
           next.add(kind);
           changed = true;
@@ -374,7 +428,7 @@ export default function App() {
       });
       return changed ? next : prev;
     });
-  }, [planTreeSelections, visibleClusterIds]);
+  }, [decisionOutline, planTreeSelections, rootOnlyClusterIds, visibleClusterIds]);
 
   const handlePlanTreeSelectionsChange = useCallback(
     (update: SetStateAction<Partial<Record<PlanTreeKind, string | null>>>) => {
@@ -946,6 +1000,29 @@ export default function App() {
     pushChatHistory("assistant", response, "create");
   }, [clusterLabel, generatedClusterIds, pushChatHistory]);
 
+  const expandDecisionNodeFromPrompt = useCallback((clusterId: ClusterId, nodeId: string, text: string): string => {
+    const outline = decisionOutline[clusterId] ?? [];
+    const parent = outline.find((item) => item.nodeId === nodeId);
+    const isLeaf = parent ? !outlineHasDirectChild(outline, nodeId) : true;
+    const count = isLeaf ? 2 : 1;
+    const timestamp = Date.now();
+    const prefix = nodePrefixForCluster(clusterId);
+    const additions: DynamicDecisionNode[] = Array.from({ length: count }, (_, index) => ({
+      clusterId,
+      nodeId: `${prefix}-ai-${timestamp}-${index}`,
+      title: expansionTitle(text, index),
+      summary: expansionSummary(text, clusterLabel(clusterId), index),
+      depth: (parent?.depth ?? 0) + 1,
+      parentNodeId: nodeId,
+    }));
+    setDynamicDecisionNodes((prev) => ({
+      ...prev,
+      [clusterId]: [...(prev[clusterId] ?? []), ...additions],
+    }));
+    const suffix = count === 2 ? "two alternative child nodes" : "one child decision node";
+    return `Expanded ${parent?.title ?? "this node"} with ${suffix} from the participant prompt.`;
+  }, [clusterLabel, decisionOutline]);
+
   const runMock = useCallback(() => {
     const text = prompt.trim();
     if (!text) return;
@@ -967,9 +1044,21 @@ export default function App() {
     if (chatMode === "node" || activeContext?.kind === "node") {
       const label = activeContext?.kind === "node" ? activeContext.label : clusterLabel(clusterFocus);
       const nodeId = activeContext?.kind === "node" ? activeContext.id : null;
-      const cluster = activeContext?.kind === "node" ? clusterLabel(activeContext.clusterId) : clusterLabel(clusterFocus);
+      const activeClusterId = activeContext?.kind === "node" ? activeContext.clusterId : clusterFocus;
+      const cluster = clusterLabel(activeClusterId);
       const nextTurn = nodeId ? (nodeChatHistoryById[nodeId]?.filter((entry) => entry.role === "user").length ?? 0) + 1 : 1;
-      const response = nodePromptReply(text, label, cluster, nextTurn);
+      const outlineRoot = decisionOutline[activeClusterId]?.[0]?.nodeId;
+      const isEmptyGeneratedRoot = Boolean(nodeId && nodeId === outlineRoot && rootOnlyClusterIds.includes(activeClusterId));
+      let response = "";
+      if (isEmptyGeneratedRoot) {
+        setGeneratedClusterTreeReady((prev) => new Set(prev).add(activeClusterId));
+        setPlanTreeSelections((prev) => ({ ...prev, [activeClusterId]: nodeId }));
+        response = `Generated an initial ${cluster} decision tree from this root prompt. The branches are still mock data for the evaluation workflow.`;
+      } else if (nodeId && expandNodeTool) {
+        response = expandDecisionNodeFromPrompt(activeClusterId, nodeId, text);
+      } else {
+        response = nodePromptReply(text, label, cluster, nextTurn);
+      }
       setAssistantLine(response);
       if (nodeId) {
         pushNodeChatHistory(nodeId, "user", text, "node");
@@ -986,11 +1075,25 @@ export default function App() {
     setAssistantLine(response);
     pushChatHistory("assistant", response, "general");
     setPrompt("");
-  }, [activeContext, addGeneratedCluster, chatMode, clusterFocus, clusterLabel, nodeChatHistoryById, prompt, pushChatHistory, pushNodeChatHistory]);
+  }, [
+    activeContext,
+    addGeneratedCluster,
+    chatMode,
+    clusterFocus,
+    clusterLabel,
+    decisionOutline,
+    expandDecisionNodeFromPrompt,
+    expandNodeTool,
+    nodeChatHistoryById,
+    prompt,
+    pushChatHistory,
+    pushNodeChatHistory,
+    rootOnlyClusterIds,
+  ]);
 
   const prepareCreateCluster = useCallback(() => {
-    setClusterCreateDraft({ label: GENERATED_CLUSTER_IDS.find((id) => !generatedClusterIds.includes(id)) === "security" ? "Security" : "" });
-  }, [generatedClusterIds]);
+    setClusterCreateDraft({ label: "" });
+  }, []);
 
   const submitMoveNode = useCallback((from: { clusterId: ClusterId; nodeId: string }, to: { clusterId: ClusterId; nodeId: string }) => {
     const sourceNodes = decisionOutline[from.clusterId] ?? [];
@@ -1097,7 +1200,12 @@ export default function App() {
     const nextCluster = GENERATED_CLUSTER_IDS.find((id) => !generatedClusterIds.includes(id));
     if (!nextCluster) return;
     setGeneratedClusterIds((prev) => [...prev, nextCluster]);
-    setClusterLabelOverrides((prev) => ({ ...prev, [nextCluster]: nextCluster === "security" ? "Security" : label }));
+    setGeneratedClusterTreeReady((prev) => {
+      const next = new Set(prev);
+      next.delete(nextCluster);
+      return next;
+    });
+    setClusterLabelOverrides((prev) => ({ ...prev, [nextCluster]: label }));
     setClusterCreateDraft(null);
     setShowIntro(false);
     setTab("plan");
@@ -1107,11 +1215,12 @@ export default function App() {
     setPlanExplorerTabId(programTabForCluster(nextCluster));
     const rootNode = decisionOutlineForCluster(nextCluster)[0];
     if (rootNode) {
-      setActiveContext({ kind: "node", id: rootNode.nodeId, clusterId: nextCluster, label: rootNode.title });
-      setScopeLabel(rootNode.title);
-      seedNodeChatHistory(rootNode.nodeId, `Created ${clusterLabelOverrides[nextCluster] ?? (nextCluster === "security" ? "Security" : label)}. Prompt the root node to generate its decision tree.`);
+      setPlanTreeSelections((prev) => ({ ...prev, [nextCluster]: null }));
+      setActiveContext({ kind: "node", id: rootNode.nodeId, clusterId: nextCluster, label });
+      setScopeLabel(label);
+      seedNodeChatHistory(rootNode.nodeId, `Created ${label}. Prompt the empty root node to generate its decision tree.`);
     }
-  }, [clusterCreateDraft, clusterLabelOverrides, generatedClusterIds, seedNodeChatHistory]);
+  }, [clusterCreateDraft, generatedClusterIds, seedNodeChatHistory]);
 
   const startSidebarResize = useCallback(
     (startX: number) => {
@@ -1294,7 +1403,7 @@ export default function App() {
               <input
                 value={clusterCreateDraft.label}
                 autoFocus
-                placeholder="e.g. Security"
+                placeholder="Cluster name"
                 onChange={(event) => setClusterCreateDraft({ label: event.target.value })}
               />
             </label>
@@ -1554,6 +1663,8 @@ export default function App() {
                     onGenerateFeatures={handleGenerateFeatures}
                     generatedFeatureNodeIds={generatedFeatureNodeIds}
                     movedRootNodes={movedRootNodes}
+                    dynamicDecisionNodes={dynamicDecisionNodes}
+                    rootOnlyClusterIds={rootOnlyClusterIds}
                     chatPromptCounts={chatPromptCounts}
                     confirmedNodeIds={confirmedNodeIds}
                     onToggleConfirmNode={toggleConfirmNode}
@@ -1669,6 +1780,9 @@ export default function App() {
           onSelectContext={setActiveContext}
           onOpenSource={setSourceViewerId}
           onRemoveSource={removeSourceFromPanel}
+          onAddSource={(kind) => void addAttachmentMetadata(kind === "link" ? "link" : "upload")}
+          expandNodeTool={expandNodeTool}
+          onExpandNodeToolChange={setExpandNodeTool}
           onRenameGlobal={renameGlobalFeature}
           onRemoveGlobal={removeGlobalFeature}
           onRenameLocal={renameLocalFeature}
