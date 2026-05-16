@@ -295,8 +295,10 @@ export default function App() {
   const [movedRootNodes, setMovedRootNodes] = useState<Partial<Record<ClusterId, DecisionOutlineItem[]>>>({});
   const [moveDraft, setMoveDraft] = useState<null | { fromCluster: ClusterId; fromNode: string; toCluster: ClusterId; toNode: string }>(null);
   const [clusterCreateDraft, setClusterCreateDraft] = useState<null | { label: string }>(null);
+  const [featureMenu, setFeatureMenu] = useState<null | { kind: "global" | "local"; id: string; label: string }>(null);
   const [attachments, setAttachments] = useState<IntroAttachment[]>([]);
   const [sourceAssignments, setSourceAssignments] = useState<SourceAssignment>({});
+  const [openSourceCards, setOpenSourceCards] = useState<Set<string>>(() => new Set());
   const [topSearch, setTopSearch] = useState("");
   const [linkCaptureOpen, setLinkCaptureOpen] = useState(false);
   const [linkDraft, setLinkDraft] = useState("");
@@ -319,6 +321,8 @@ export default function App() {
   const [workspaceProgramTabs, setWorkspaceProgramTabs] = useState<Array<{ id: string; label: string; path: string; code: string }>>([]);
 
   const programCatalog = useMemo(() => workspaceProgramTabs, [workspaceProgramTabs]);
+  const topSearchNorm = topSearch.trim().toLowerCase();
+  const topSearchMatches = useCallback((value: string) => !topSearchNorm || value.toLowerCase().includes(topSearchNorm), [topSearchNorm]);
   const visibleClusters = useMemo(
     () =>
       CLUSTERS.filter((cluster) => !GENERATED_CLUSTER_IDS.includes(cluster.id) || generatedClusterIds.includes(cluster.id)).map((cluster) => {
@@ -355,6 +359,14 @@ export default function App() {
   const completedClusterCount = visibleClusterIds.filter((kind) => completedClusterIds.has(kind)).length;
   const clusterTotal = visibleClusters.length;
   const allVisibleClustersComplete = clusterTotal > 0 && completedClusterCount >= clusterTotal;
+  const visibleGlobalFeatures = useMemo(
+    () => (topSearchNorm ? globalFeatures.filter((item) => topSearchMatches(item.label)) : globalFeatures),
+    [globalFeatures, topSearchMatches, topSearchNorm]
+  );
+  const visibleLocalFeatures = useMemo(
+    () => (topSearchNorm ? (localByCluster[clusterFocus] ?? []).filter((item) => topSearchMatches(item.label)) : (localByCluster[clusterFocus] ?? [])),
+    [clusterFocus, localByCluster, topSearchMatches, topSearchNorm]
+  );
 
   const pushChatHistory = useCallback((role: ChatHistoryItem["role"], text: string, mode: ChatMode = chatMode) => {
     setChatHistory((prev) => [
@@ -914,6 +926,35 @@ export default function App() {
     [attachments]
   );
 
+  useEffect(() => {
+    setOpenSourceCards((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const source of sourceItems) {
+        if (!next.has(source.id)) {
+          next.add(source.id);
+          changed = true;
+        }
+      }
+      for (const id of [...next]) {
+        if (!sourceItems.some((source) => source.id === id)) {
+          next.delete(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [sourceItems]);
+
+  const toggleSourceCard = useCallback((id: string) => {
+    setOpenSourceCards((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
   const programFileItems = useMemo(
     () => (planApplied ? programCatalog.map((file) => ({ id: file.id, label: file.label, path: file.path })) : []),
     [planApplied, programCatalog]
@@ -1214,6 +1255,26 @@ export default function App() {
       return { ...prev, [sourceId]: [...current] };
     });
   }, []);
+
+  const handleFeatureMenuAction = useCallback((action: "rename" | "delete") => {
+    if (!featureMenu) return;
+    const scope = featureMenu.kind === "global" ? "global" : "local";
+    if (action === "rename") {
+      const next = window.prompt(`Rename ${scope} feature`, featureMenu.label);
+      if (next?.trim()) {
+        if (featureMenu.kind === "global") renameGlobalFeature(featureMenu.id, next.trim());
+        else renameLocalFeature(clusterFocus, featureMenu.id, next.trim());
+      }
+      setFeatureMenu(null);
+      return;
+    }
+    const ok = window.confirm(`Delete "${featureMenu.label}" from ${scope} features?`);
+    if (ok) {
+      if (featureMenu.kind === "global") removeGlobalFeature(featureMenu.id);
+      else removeLocalFeature(clusterFocus, featureMenu.id);
+    }
+    setFeatureMenu(null);
+  }, [clusterFocus, featureMenu, removeGlobalFeature, removeLocalFeature, renameGlobalFeature, renameLocalFeature]);
 
   const createNamedCluster = useCallback(() => {
     const label = clusterCreateDraft?.label.trim();
@@ -1569,43 +1630,35 @@ export default function App() {
                       </button>
                       {canvasContextOpen.global && (
                         <div className="pf-context-card__list">
-                          {globalFeatures.length === 0 ? (
-                            <div className="pf-context-card__empty">No global features yet.</div>
+                          {visibleGlobalFeatures.length === 0 ? (
+                            <div className="pf-context-card__empty">{topSearchNorm ? "No global feature matches." : "No global features yet."}</div>
                           ) : (
-                            globalFeatures.map((item) => (
-                              <button
+                            visibleGlobalFeatures.map((item) => (
+                              <div
                                 key={item.id}
-                                type="button"
                                 className={`pf-context-chip ${activeContext?.kind === "global" && activeContext.id === item.id ? "pf-context-chip--active" : ""}`}
-                                onClick={() => setActiveContext({ kind: "global", id: item.id })}
                               >
-                                <span>{item.label}</span>
-                                <span
+                                <button type="button" className="pf-context-chip__label" onClick={() => setActiveContext({ kind: "global", id: item.id })}>
+                                  {item.label}
+                                </button>
+                                <button
+                                  type="button"
                                   className="pf-context-chip__menu"
-                                  role="button"
-                                  tabIndex={0}
                                   aria-label={`Edit ${item.label}`}
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    const next = window.prompt("Rename global feature", item.label);
-                                    if (next?.trim()) renameGlobalFeature(item.id, next.trim());
+                                    setFeatureMenu((prev) => (prev?.id === item.id && prev.kind === "global" ? null : { kind: "global", id: item.id, label: item.label }));
                                   }}
                                 >
                                   ⋯
-                                </span>
-                                <span
-                                  className="pf-context-chip__remove"
-                                  role="button"
-                                  tabIndex={0}
-                                  aria-label={`Remove ${item.label}`}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    removeGlobalFeature(item.id);
-                                  }}
-                                >
-                                  x
-                                </span>
-                              </button>
+                                </button>
+                                {featureMenu?.kind === "global" && featureMenu.id === item.id ? (
+                                  <div className="pf-context-chip__popover">
+                                    <button type="button" onClick={() => handleFeatureMenuAction("rename")}>Rename</button>
+                                    <button type="button" onClick={() => handleFeatureMenuAction("delete")}>Delete</button>
+                                  </div>
+                                ) : null}
+                              </div>
                             ))
                           )}
                         </div>
@@ -1624,43 +1677,35 @@ export default function App() {
                       </button>
                       {canvasContextOpen.local && (
                         <div className="pf-context-card__list">
-                          {(localByCluster[clusterFocus] ?? []).length === 0 ? (
-                            <div className="pf-context-card__empty">Generate features from a decision node.</div>
+                          {visibleLocalFeatures.length === 0 ? (
+                            <div className="pf-context-card__empty">{topSearchNorm ? "No local feature matches." : "Generate features from a decision node."}</div>
                           ) : (
-                            (localByCluster[clusterFocus] ?? []).map((item) => (
-                              <button
+                            visibleLocalFeatures.map((item) => (
+                              <div
                                 key={item.id}
-                                type="button"
                                 className={`pf-context-chip pf-context-chip--local ${activeContext?.kind === "local" && activeContext.id === item.id ? "pf-context-chip--active" : ""}`}
-                                onClick={() => setActiveContext({ kind: "local", id: item.id })}
                               >
-                                <span>{item.label}</span>
-                                <span
+                                <button type="button" className="pf-context-chip__label" onClick={() => setActiveContext({ kind: "local", id: item.id })}>
+                                  {item.label}
+                                </button>
+                                <button
+                                  type="button"
                                   className="pf-context-chip__menu"
-                                  role="button"
-                                  tabIndex={0}
                                   aria-label={`Edit ${item.label}`}
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    const next = window.prompt("Rename local feature", item.label);
-                                    if (next?.trim()) renameLocalFeature(clusterFocus, item.id, next.trim());
+                                    setFeatureMenu((prev) => (prev?.id === item.id && prev.kind === "local" ? null : { kind: "local", id: item.id, label: item.label }));
                                   }}
                                 >
                                   ⋯
-                                </span>
-                                <span
-                                  className="pf-context-chip__remove"
-                                  role="button"
-                                  tabIndex={0}
-                                  aria-label={`Remove ${item.label}`}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    removeLocalFeature(clusterFocus, item.id);
-                                  }}
-                                >
-                                  x
-                                </span>
-                              </button>
+                                </button>
+                                {featureMenu?.kind === "local" && featureMenu.id === item.id ? (
+                                  <div className="pf-context-chip__popover">
+                                    <button type="button" onClick={() => handleFeatureMenuAction("rename")}>Rename</button>
+                                    <button type="button" onClick={() => handleFeatureMenuAction("delete")}>Delete</button>
+                                  </div>
+                                ) : null}
+                              </div>
                             ))
                           )}
                         </div>
@@ -1726,25 +1771,45 @@ export default function App() {
                       <div className="pf-source-page__empty">No sources yet.</div>
                     ) : (
                       sourceItems.map((source) => (
-                        <article key={source.id} className="pf-source-page__card">
-                          <div>
-                            <span className="pf-source-page__kind">{source.kind}</span>
-                            <strong>{source.label}</strong>
+                        <article key={source.id} className={`pf-source-page__card ${openSourceCards.has(source.id) ? "" : "pf-source-page__card--closed"}`}>
+                          <div className="pf-source-page__card-head">
+                            <button
+                              type="button"
+                              className="pf-source-page__toggle"
+                              onClick={() => toggleSourceCard(source.id)}
+                              aria-label={openSourceCards.has(source.id) ? `Collapse ${source.label}` : `Expand ${source.label}`}
+                            >
+                              {openSourceCards.has(source.id) ? "⌄" : "›"}
+                            </button>
+                            <div>
+                              <span className="pf-source-page__kind">{source.kind}</span>
+                              <strong>{source.label}</strong>
+                            </div>
+                            <button
+                              type="button"
+                              className="pf-source-page__remove"
+                              aria-label={`Remove ${source.label}`}
+                              title="Remove source"
+                              onClick={() => removeSourceFromPanel(source.id)}
+                            >
+                              ×
+                            </button>
                           </div>
-                          <button type="button" onClick={() => removeSourceFromPanel(source.id)}>Remove</button>
-                          <div className="pf-source-page__assign">
-                            {allDecisionNodes.map(({ clusterLabel: label, node }) => (
-                              <label key={`${source.id}-${node.nodeId}`} className="pf-source-page__check">
-                                <input
-                                  type="checkbox"
-                                  checked={(sourceAssignments[source.id] ?? []).includes(node.nodeId)}
-                                  onChange={() => toggleSourceAssignment(source.id, node.nodeId)}
-                                />
-                                <span>{node.title}</span>
-                                <em>{label}</em>
-                              </label>
-                            ))}
-                          </div>
+                          {openSourceCards.has(source.id) && (
+                            <div className="pf-source-page__assign">
+                              {allDecisionNodes.map(({ clusterLabel: label, node }) => (
+                                <label key={`${source.id}-${node.nodeId}`} className="pf-source-page__check">
+                                  <input
+                                    type="checkbox"
+                                    checked={(sourceAssignments[source.id] ?? []).includes(node.nodeId)}
+                                    onChange={() => toggleSourceAssignment(source.id, node.nodeId)}
+                                  />
+                                  <span>{node.title}</span>
+                                  <em>{label}</em>
+                                </label>
+                              ))}
+                            </div>
+                          )}
                         </article>
                       ))
                     )}

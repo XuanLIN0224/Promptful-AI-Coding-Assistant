@@ -473,6 +473,11 @@ export function FeatureSidebar({
     return out.slice(0, 10);
   }, [analyticsClusters, filterActive, queryNorm, localByCluster]);
 
+  const globalSearchHits = useMemo(() => {
+    if (!filterActive) return [];
+    return globalItems.filter((item) => matchesQuery(queryNorm, item.label)).slice(0, 8);
+  }, [filterActive, globalItems, queryNorm]);
+
   const [renameTarget, setRenameTarget] = useState<null | { variant: "global" | "local"; id: string; initialLabel: string }>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<null | { variant: "global" | "local"; id: string; label: string }>(null);
@@ -724,6 +729,27 @@ export function FeatureSidebar({
             </div>
           </div>
         )}
+        {filterActive && globalSearchHits.length > 0 && (
+          <div className="pf-side-search__sub" aria-label="Global features">
+            <div className="pf-side-search__sub-label">Global</div>
+            <div className="pf-side-search__sub-list pf-side-search__sub-list--stack">
+              {globalSearchHits.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="pf-side-search__row"
+                  onClick={() => {
+                    onSelectContext({ kind: "global", id: item.id });
+                    setContextSearch("");
+                  }}
+                >
+                  <span className="pf-side-search__row-k">Global</span>
+                  <span className="pf-side-search__row-t">{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {filterActive && localSearchHits.length > 0 && (
           <div className="pf-side-search__sub" aria-label="Local prompts across clusters">
             <div className="pf-side-search__sub-label">Local</div>
@@ -765,7 +791,7 @@ export function FeatureSidebar({
               <button
                 key={cl.id}
                 type="button"
-                className={`pf-layer-nav-dot ${cl.id === clusterId ? "pf-layer-nav-dot--active" : ""}`}
+                className={`pf-layer-nav-dot ${!showAllLayers && cl.id === clusterId ? "pf-layer-nav-dot--active" : ""}`}
                 style={{ background: cl.color }}
                 title={`Navigate to ${cl.label}`}
                 aria-label={`Navigate to ${cl.label}`}
@@ -809,7 +835,7 @@ export function FeatureSidebar({
                 });
                 const open = openLayerIds.has(cl.id);
                 return (
-                  <div key={cl.id} className={`pf-layer ${cl.id === clusterId ? "pf-layer--active" : ""}`}>
+                  <div key={cl.id} className={`pf-layer ${!showAllLayers && cl.id === clusterId ? "pf-layer--active" : ""}`}>
                     <div className="pf-layer__row">
                       <button type="button" className="pf-layer__fold" aria-label={open ? `Collapse ${cl.label}` : `Expand ${cl.label}`} onClick={() => toggleLayer(cl.id)}>
                         {open ? "⌄" : "›"}
