@@ -1651,7 +1651,6 @@ export default function App() {
           attachments={attachments}
           onAddAttachment={addAttachmentMetadata}
           onRemoveAttachment={removeAttachmentMetadata}
-          onBegin={begin}
           clusters={visibleClusters}
           onChooseCluster={beginClusterFromIntro}
           onViewAllClusters={beginAllClustersFromIntro}

@@ -1679,8 +1679,10 @@
   flex: 1 1 auto;
   min-height: 0;
   max-height: 100%;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .pf-chat-card {
@@ -2094,9 +2096,8 @@
   gap: 2px;
   padding: 0 7px 8px 7px;
   min-height: 0;
-  max-height: min(360px, 52vh);
-  overflow: auto;
-  overscroll-behavior: contain;
+  max-height: none;
+  overflow: visible;
 }
 
 .pf-layer-node {
@@ -2490,8 +2491,11 @@
 
 .pf-source-page {
   flex: 1 1 auto;
+  height: 100%;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 24px;
 }
 
@@ -2530,6 +2534,7 @@
 .pf-source-page__list {
   display: grid;
   gap: 12px;
+  padding-bottom: 36px;
 }
 
 .pf-source-page__empty,
@@ -2602,8 +2607,8 @@
 .pf-source-page__layers {
   display: grid;
   gap: 10px;
-  max-height: 430px;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
   padding-right: 2px;
 }
 

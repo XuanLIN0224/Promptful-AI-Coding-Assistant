@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { ClusterId, ClusterMeta, WorkspaceTab } from "../types";
+import type { ClusterId, ClusterMeta } from "../types";
 
 /** Placeholder names only - this mock never calls a real model or API. */
-const MOCK_MODELS = ["Promptful Mock", "Structure Assistant", "Decision Mapper", "Context Reviewer"] as const;
+const MOCK_MODELS = ["ChatGPT", "Gemini", "Claude", "Copilot", "Promptful Mock"] as const;
 
 export type IntroAttachment = {
   id: string;
@@ -11,7 +11,6 @@ export type IntroAttachment = {
 };
 
 export function IntroOverlay({
-  onBegin,
   prompt,
   onPromptChange,
   onPromptSend,
@@ -22,7 +21,6 @@ export function IntroOverlay({
   onChooseCluster,
   onViewAllClusters,
 }: {
-  onBegin: (tab: WorkspaceTab) => void;
   prompt: string;
   onPromptChange: (v: string) => void;
   onPromptSend: () => void;
@@ -87,17 +85,6 @@ export function IntroOverlay({
             </p>
           </div>
 
-          <div className="pf-intro__modes">
-            <button type="button" className="pf-intro__mode" onClick={() => onBegin("plan")}>
-              Plan
-            </button>
-            <button type="button" className="pf-intro__mode" onClick={() => onBegin("program")}>
-              Program
-            </button>
-            <button type="button" className="pf-intro__mode" onClick={() => onBegin("source")}>
-              Source
-            </button>
-          </div>
         </div>
 
         <div className="pf-node pf-node--decision pf-intro__session-node pf-intro__session-node--workspace">
