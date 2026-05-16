@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent, type SetStateAction } from "react";
+import { createPortal } from "react-dom";
 import type { OnSelectionChangeParams, Viewport } from "@xyflow/react";
 import type { ClusterId, DecisionNodePayload, DynamicDecisionNode, FeatureItem, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode, WorkspaceTab } from "./types";
 import { CLUSTERS } from "./types";
@@ -295,7 +296,7 @@ export default function App() {
   const [movedRootNodes, setMovedRootNodes] = useState<Partial<Record<ClusterId, DecisionOutlineItem[]>>>({});
   const [moveDraft, setMoveDraft] = useState<null | { fromCluster: ClusterId; fromNode: string; toCluster: ClusterId; toNode: string }>(null);
   const [clusterCreateDraft, setClusterCreateDraft] = useState<null | { label: string }>(null);
-  const [featureMenu, setFeatureMenu] = useState<null | { kind: "global" | "local"; id: string; label: string }>(null);
+  const [featureMenu, setFeatureMenu] = useState<null | { kind: "global" | "local"; id: string; label: string; top: number; left: number }>(null);
   const [attachments, setAttachments] = useState<IntroAttachment[]>([]);
   const [sourceAssignments, setSourceAssignments] = useState<SourceAssignment>({});
   const [openSourceCards, setOpenSourceCards] = useState<Set<string>>(() => new Set());
@@ -1276,6 +1277,24 @@ export default function App() {
     setFeatureMenu(null);
   }, [clusterFocus, featureMenu, removeGlobalFeature, removeLocalFeature, renameGlobalFeature, renameLocalFeature]);
 
+  const openFeatureMenu = useCallback((
+    event: MouseEvent<HTMLButtonElement>,
+    feature: { kind: "global" | "local"; id: string; label: string }
+  ) => {
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const menuWidth = 136;
+    const gap = 10;
+    const preferredLeft = rect.right + gap;
+    const left = Math.max(12, Math.min(preferredLeft, window.innerWidth - menuWidth - 12));
+    const top = Math.max(12, Math.min(rect.top - 8, window.innerHeight - 120));
+    setFeatureMenu((prev) => (
+      prev?.id === feature.id && prev.kind === feature.kind
+        ? null
+        : { ...feature, top, left }
+    ));
+  }, []);
+
   const createNamedCluster = useCallback(() => {
     const label = clusterCreateDraft?.label.trim();
     if (!label) return;
@@ -1330,6 +1349,23 @@ export default function App() {
 
   return (
     <div className="pf-shell">
+      {featureMenu && createPortal(
+        <div
+          className="pf-context-chip__portal-menu"
+          role="menu"
+          aria-label={`${featureMenu.label} actions`}
+          style={{ top: featureMenu.top, left: featureMenu.left }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <button type="button" role="menuitem" onClick={() => handleFeatureMenuAction("rename")}>
+            Rename
+          </button>
+          <button type="button" role="menuitem" onClick={() => handleFeatureMenuAction("delete")}>
+            Delete
+          </button>
+        </div>,
+        document.body
+      )}
       {linkCaptureOpen && (
         <div className="pf-link-modal-backdrop" role="presentation" onMouseDown={closeLinkCapture}>
           <div
@@ -1645,19 +1681,10 @@ export default function App() {
                                   type="button"
                                   className="pf-context-chip__menu"
                                   aria-label={`Edit ${item.label}`}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    setFeatureMenu((prev) => (prev?.id === item.id && prev.kind === "global" ? null : { kind: "global", id: item.id, label: item.label }));
-                                  }}
+                                  onClick={(event) => openFeatureMenu(event, { kind: "global", id: item.id, label: item.label })}
                                 >
                                   ⋯
                                 </button>
-                                {featureMenu?.kind === "global" && featureMenu.id === item.id ? (
-                                  <div className="pf-context-chip__popover">
-                                    <button type="button" onClick={() => handleFeatureMenuAction("rename")}>Rename</button>
-                                    <button type="button" onClick={() => handleFeatureMenuAction("delete")}>Delete</button>
-                                  </div>
-                                ) : null}
                               </div>
                             ))
                           )}
@@ -1692,19 +1719,10 @@ export default function App() {
                                   type="button"
                                   className="pf-context-chip__menu"
                                   aria-label={`Edit ${item.label}`}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    setFeatureMenu((prev) => (prev?.id === item.id && prev.kind === "local" ? null : { kind: "local", id: item.id, label: item.label }));
-                                  }}
+                                  onClick={(event) => openFeatureMenu(event, { kind: "local", id: item.id, label: item.label })}
                                 >
                                   ⋯
                                 </button>
-                                {featureMenu?.kind === "local" && featureMenu.id === item.id ? (
-                                  <div className="pf-context-chip__popover">
-                                    <button type="button" onClick={() => handleFeatureMenuAction("rename")}>Rename</button>
-                                    <button type="button" onClick={() => handleFeatureMenuAction("delete")}>Delete</button>
-                                  </div>
-                                ) : null}
                               </div>
                             ))
                           )}
