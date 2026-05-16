@@ -2599,34 +2599,109 @@
   color: var(--text-secondary);
 }
 
-.pf-source-page__assign {
+.pf-source-page__layers {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px;
-  max-height: 360px;
+  gap: 10px;
+  max-height: 430px;
   overflow: auto;
+  padding-right: 2px;
 }
 
-.pf-source-page__check {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
+.pf-source-layer {
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 8px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  overflow: hidden;
 }
 
-.pf-source-page__check span {
+.pf-source-layer__head {
+  display: grid;
+  grid-template-columns: 28px 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 8px 12px;
+}
+
+.pf-source-layer__fold {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+}
+
+.pf-source-layer__fold:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text);
+}
+
+.pf-source-layer__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.pf-source-layer__head strong {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.pf-source-page__check em {
+.pf-source-layer__count {
+  color: var(--text-secondary);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pf-source-layer__nodes {
+  display: grid;
+  gap: 2px;
+  padding: 0 10px 10px;
+}
+
+.pf-source-layer__node {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  border-radius: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.pf-source-layer__node:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.pf-source-layer__node span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf-source-layer__node em,
+.pf-source-layer__empty {
   color: var(--text-secondary);
   font-style: normal;
   font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pf-source-layer__empty {
+  padding: 8px 12px;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .pf-program__sheet {

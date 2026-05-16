@@ -308,6 +308,7 @@ export default function App() {
   const [attachments, setAttachments] = useState<IntroAttachment[]>([]);
   const [sourceAssignments, setSourceAssignments] = useState<SourceAssignment>({});
   const [openSourceCards, setOpenSourceCards] = useState<Set<string>>(() => new Set());
+  const [openSourceLayers, setOpenSourceLayers] = useState<Set<string>>(() => new Set());
   const [topSearch, setTopSearch] = useState("");
   const [linkCaptureOpen, setLinkCaptureOpen] = useState(false);
   const [linkDraft, setLinkDraft] = useState("");
@@ -955,6 +956,31 @@ export default function App() {
     });
   }, [sourceItems]);
 
+  useEffect(() => {
+    setOpenSourceLayers((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      const valid = new Set<string>();
+      for (const source of sourceItems) {
+        for (const clusterId of visibleClusterIds) {
+          const key = `${source.id}:${clusterId}`;
+          valid.add(key);
+          if (!next.has(key)) {
+            next.add(key);
+            changed = true;
+          }
+        }
+      }
+      for (const key of [...next]) {
+        if (!valid.has(key)) {
+          next.delete(key);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [sourceItems, visibleClusterIds]);
+
   const toggleSourceCard = useCallback((id: string) => {
     setOpenSourceCards((prev) => {
       const next = new Set(prev);
@@ -964,20 +990,27 @@ export default function App() {
     });
   }, []);
 
+  const toggleSourceLayer = useCallback((sourceId: string, clusterId: ClusterId) => {
+    const key = `${sourceId}:${clusterId}`;
+    setOpenSourceLayers((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
   const programFileItems = useMemo(
     () => (planApplied ? programCatalog.map((file) => ({ id: file.id, label: file.label, path: file.path })) : []),
     [planApplied, programCatalog]
   );
-  const allDecisionNodes = useMemo(
+  const sourceClusterGroups = useMemo(
     () =>
-      visibleClusterIds.flatMap((clusterId) =>
-        (decisionOutline[clusterId] ?? []).map((node) => ({
-          clusterId,
-          clusterLabel: clusterLabel(clusterId),
-          node,
-        }))
-      ),
-    [clusterLabel, decisionOutline, visibleClusterIds]
+      visibleClusters.map((cluster) => ({
+        cluster,
+        nodes: decisionOutline[cluster.id] ?? [],
+      })),
+    [decisionOutline, visibleClusters]
   );
 
   const pickProgramFileFromSidebar = useCallback(
@@ -1890,18 +1923,52 @@ export default function App() {
                             </button>
                           </div>
                           {openSourceCards.has(source.id) && (
-                            <div className="pf-source-page__assign">
-                              {allDecisionNodes.map(({ clusterLabel: label, node }) => (
-                                <label key={`${source.id}-${node.nodeId}`} className="pf-source-page__check">
-                                  <input
-                                    type="checkbox"
-                                    checked={(sourceAssignments[source.id] ?? []).includes(node.nodeId)}
-                                    onChange={() => toggleSourceAssignment(source.id, node.nodeId)}
-                                  />
-                                  <span>{node.title}</span>
-                                  <em>{label}</em>
-                                </label>
-                              ))}
+                            <div className="pf-source-page__layers" aria-label={`${source.label} node assignments`}>
+                              {sourceClusterGroups.map(({ cluster, nodes }) => {
+                                const layerKey = `${source.id}:${cluster.id}`;
+                                const open = openSourceLayers.has(layerKey);
+                                const assignedCount = nodes.filter((node) => (sourceAssignments[source.id] ?? []).includes(node.nodeId)).length;
+                                return (
+                                  <section key={layerKey} className={`pf-source-layer ${open ? "" : "pf-source-layer--closed"}`}>
+                                    <div className="pf-source-layer__head">
+                                      <button
+                                        type="button"
+                                        className="pf-source-layer__fold"
+                                        aria-label={open ? `Collapse ${cluster.label}` : `Expand ${cluster.label}`}
+                                        onClick={() => toggleSourceLayer(source.id, cluster.id)}
+                                      >
+                                        {open ? "⌄" : "›"}
+                                      </button>
+                                      <span className="pf-source-layer__dot" style={{ background: cluster.color }} />
+                                      <strong>{cluster.label}</strong>
+                                      <span className="pf-source-layer__count">{assignedCount}/{nodes.length}</span>
+                                    </div>
+                                    {open && (
+                                      <div className="pf-source-layer__nodes">
+                                        {nodes.length === 0 ? (
+                                          <div className="pf-source-layer__empty">No nodes yet.</div>
+                                        ) : (
+                                          nodes.map((node) => (
+                                            <label
+                                              key={`${source.id}-${node.nodeId}`}
+                                              className="pf-source-layer__node"
+                                              style={{ paddingLeft: `${10 + node.depth * 18}px` }}
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={(sourceAssignments[source.id] ?? []).includes(node.nodeId)}
+                                                onChange={() => toggleSourceAssignment(source.id, node.nodeId)}
+                                              />
+                                              <span title={node.title}>{node.title}</span>
+                                              <em>{node.depth === 0 ? "root" : "node"}</em>
+                                            </label>
+                                          ))
+                                        )}
+                                      </div>
+                                    )}
+                                  </section>
+                                );
+                              })}
                             </div>
                           )}
                         </article>
