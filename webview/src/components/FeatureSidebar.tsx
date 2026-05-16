@@ -1012,15 +1012,15 @@ export function FeatureSidebar({
                     </div>
                   )}
                 </div>
-                <label className={`pf-chat-expand-switch ${expandNodeTool ? "pf-chat-expand-switch--on" : ""}`} title="Expand node">
-                  <input
-                    type="checkbox"
-                    checked={expandNodeTool}
-                    onChange={(event) => onExpandNodeToolChange(event.target.checked)}
-                  />
-                  <span aria-hidden />
-                  <em>Expand</em>
-                </label>
+                <button
+                  type="button"
+                  className={`pf-chat-expand-button ${expandNodeTool ? "pf-chat-expand-button--on" : ""}`}
+                  aria-pressed={expandNodeTool}
+                  title="Expand node"
+                  onClick={() => onExpandNodeToolChange(!expandNodeTool)}
+                >
+                  Expand node
+                </button>
                 <button type="button" onClick={onComposerSubmit} disabled={!composerPrompt?.trim()}>
                   Send
                 </button>

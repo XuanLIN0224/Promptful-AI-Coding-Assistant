@@ -745,29 +745,26 @@
 }
 
 .pf-context-chip__popover {
-  position: absolute;
-  right: 6px;
-  top: calc(100% + 4px);
-  width: 96px;
+  grid-column: 1 / -1;
+  width: 100%;
   display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 3px;
-  padding: 5px;
+  padding-top: 6px;
   border-radius: 10px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: var(--shadow-md);
+  background: transparent;
   z-index: 30;
 }
 
 .pf-context-chip__popover button {
   border: 0;
   border-radius: 7px;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.78);
   color: var(--text);
   font-size: 11px;
   font-weight: 700;
   padding: 7px 8px;
-  text-align: left;
+  text-align: center;
   cursor: pointer;
 }
 
@@ -1943,64 +1940,26 @@
   background: rgba(0, 0, 0, 0.055);
 }
 
-.pf-chat-expand-switch {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 5px;
+.pf-chat-expand-button {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
   color: var(--text-secondary);
   font-size: 10px;
-  font-weight: 750;
+  font-weight: 800;
+  line-height: 1.05;
+  padding: 6px 9px;
   cursor: pointer;
-  user-select: none;
 }
 
-.pf-chat-expand-switch input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.pf-chat-expand-switch span {
-  position: relative;
-  width: 32px;
-  height: 18px;
-  flex: 0 0 auto;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.16);
-  transition: background 140ms ease;
-}
-
-.pf-chat-expand-switch em {
-  display: none;
-}
-
-.pf-chat-expand-switch span::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
-  transition: transform 140ms ease;
-}
-
-.pf-chat-expand-switch--on {
+.pf-chat-expand-button--on {
+  border-color: rgba(0, 113, 227, 0.36);
+  background: rgba(0, 113, 227, 0.12);
   color: var(--accent);
 }
 
-.pf-chat-expand-switch--on span {
-  background: var(--accent);
-}
-
-.pf-chat-expand-switch--on span::after {
-  transform: translateX(14px);
-}
-
-.pf-chat-input__side > button,
+.pf-chat-input__side > button:not(.pf-chat-expand-button),
 .pf-move-apply {
   border: 0;
   border-radius: 12px;
@@ -2012,12 +1971,12 @@
   cursor: pointer;
 }
 
-.pf-chat-input__side > button {
+.pf-chat-input__side > button:not(.pf-chat-expand-button) {
   grid-column: 1 / -1;
   align-self: stretch;
 }
 
-.pf-chat-input__side > button:disabled,
+.pf-chat-input__side > button:not(.pf-chat-expand-button):disabled,
 .pf-move-apply:disabled {
   opacity: 0.45;
   cursor: default;
@@ -3504,17 +3463,19 @@
   color: transparent;
   cursor: pointer;
   transition: background 140ms ease, border-color 140ms ease;
+  vertical-align: middle;
 }
 
 .pf-tree-confirm span {
   position: absolute;
-  top: 2px;
+  top: 50%;
   left: 2px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
+  transform: translateY(-50%);
   transition: transform 140ms ease;
 }
 
@@ -3524,7 +3485,7 @@
 }
 
 .pf-tree-confirm--on span {
-  transform: translateX(16px);
+  transform: translate(16px, -50%);
 }
 
 .pf-tree-edit-modal-backdrop {
