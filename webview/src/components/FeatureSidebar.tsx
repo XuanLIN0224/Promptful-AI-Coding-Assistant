@@ -336,6 +336,7 @@ export function FeatureSidebar({
   onNavigateCluster,
   onNavigateDecisionNode,
   onRenameCluster,
+  onDeleteCluster,
   onAddCluster,
   onViewAllLayers,
   showAllLayers,
@@ -383,6 +384,8 @@ export function FeatureSidebar({
   onNavigateDecisionNode?: (cluster: ClusterId, item: DecisionOutlineItem) => void;
   /** Rename the visible label for a cluster. */
   onRenameCluster?: (cluster: ClusterId) => void;
+  /** Delete or hide a cluster after confirmation in the parent shell. */
+  onDeleteCluster?: (cluster: ClusterId) => void;
   /** Mock AI: add a generated cluster to the navigator. */
   onAddCluster?: () => void;
   onViewAllLayers?: () => void;
@@ -851,11 +854,18 @@ export function FeatureSidebar({
                         <span className="pf-layer__dot" style={{ background: cl.color }} />
                         <span className="pf-layer__label">{cl.label}</span>
                       </button>
+                      <div className="pf-layer__actions">
                       {onRenameCluster ? (
                         <button type="button" className="pf-layer__edit" title={`Rename ${cl.label}`} aria-label={`Rename ${cl.label}`} onClick={() => onRenameCluster(cl.id)}>
                           ✎
                         </button>
                       ) : null}
+                      {onDeleteCluster ? (
+                        <button type="button" className="pf-layer__delete" title={`Delete ${cl.label}`} aria-label={`Delete ${cl.label}`} onClick={() => onDeleteCluster(cl.id)}>
+                          ×
+                        </button>
+                      ) : null}
+                      </div>
                     </div>
                     {open && (
                       <div className="pf-layer__children">

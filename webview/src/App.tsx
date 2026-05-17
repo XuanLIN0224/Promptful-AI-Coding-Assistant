@@ -278,9 +278,11 @@ export default function App() {
   const [generatedFeatureNodeIds, setGeneratedFeatureNodeIds] = useState<Set<string>>(() => new Set());
   const [generatedClusterIds, setGeneratedClusterIds] = useState<ClusterId[]>([]);
   const [generatedClusterTreeReady, setGeneratedClusterTreeReady] = useState<Set<ClusterId>>(() => new Set());
+  const [deletedClusterIds, setDeletedClusterIds] = useState<Set<ClusterId>>(() => new Set());
   const [dynamicDecisionNodes, setDynamicDecisionNodes] = useState<Partial<Record<ClusterId, DynamicDecisionNode[]>>>({});
   const [clusterLabelOverrides, setClusterLabelOverrides] = useState<Partial<Record<ClusterId, string>>>({});
   const [clusterRenameDraft, setClusterRenameDraft] = useState<null | { id: ClusterId; label: string }>(null);
+  const [clusterDeleteDraft, setClusterDeleteDraft] = useState<null | { id: ClusterId; label: string }>(null);
   const [planApplied, setPlanApplied] = useState(false);
   const [activeContext, setActiveContext] = useState<
     | { kind: "global" | "local"; id: string }
@@ -335,11 +337,11 @@ export default function App() {
   const topSearchMatches = useCallback((value: string) => !topSearchNorm || value.toLowerCase().includes(topSearchNorm), [topSearchNorm]);
   const visibleClusters = useMemo(
     () =>
-      CLUSTERS.filter((cluster) => !GENERATED_CLUSTER_IDS.includes(cluster.id) || generatedClusterIds.includes(cluster.id)).map((cluster) => {
+      CLUSTERS.filter((cluster) => !deletedClusterIds.has(cluster.id) && (!GENERATED_CLUSTER_IDS.includes(cluster.id) || generatedClusterIds.includes(cluster.id))).map((cluster) => {
         const override = clusterLabelOverrides[cluster.id]?.trim();
         return override ? { ...cluster, label: override } : cluster;
       }),
-    [clusterLabelOverrides, generatedClusterIds]
+    [clusterLabelOverrides, deletedClusterIds, generatedClusterIds]
   );
   const visibleClusterIds = useMemo(() => visibleClusters.map((cluster) => cluster.id), [visibleClusters]);
   const clusterLabel = useCallback(
@@ -1274,6 +1276,54 @@ export default function App() {
     setClusterRenameDraft(null);
   }, [clusterLabel, clusterRenameDraft]);
 
+  const openClusterDelete = useCallback((cluster: ClusterId) => {
+    setClusterDeleteDraft({ id: cluster, label: clusterLabel(cluster) });
+  }, [clusterLabel]);
+
+  const confirmClusterDelete = useCallback(() => {
+    if (!clusterDeleteDraft) return;
+    const id = clusterDeleteDraft.id;
+    const remaining = visibleClusterIds.filter((cluster) => cluster !== id);
+    setDeletedClusterIds((prev) => {
+      const next = new Set(prev);
+      if (!GENERATED_CLUSTER_IDS.includes(id)) next.add(id);
+      return next;
+    });
+    if (GENERATED_CLUSTER_IDS.includes(id)) {
+      setGeneratedClusterIds((prev) => prev.filter((cluster) => cluster !== id));
+      setGeneratedClusterTreeReady((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+    setDynamicDecisionNodes((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setMovedRootNodes((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setLocalByCluster((prev) => ({ ...prev, [id]: [] }));
+    setCompletedClusterIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setClusterLabelOverrides((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (clusterFocus === id && remaining[0]) setClusterFocus(remaining[0]);
+    if (remaining.length === 0) setShowAllClusters(true);
+    setAssistantLine(`Deleted cluster ${clusterDeleteDraft.label}.`);
+    setClusterDeleteDraft(null);
+  }, [clusterDeleteDraft, clusterFocus, visibleClusterIds]);
+
   const toggleConfirmNode = useCallback((nodeId: string) => {
     setConfirmedNodeIds((prev) => {
       const next = new Set(prev);
@@ -2007,6 +2057,7 @@ export default function App() {
           onNavigateCluster={navigateCluster}
           onNavigateDecisionNode={navigateDecisionNode}
           onRenameCluster={openClusterRename}
+          onDeleteCluster={openClusterDelete}
           onAddCluster={prepareCreateCluster}
           onViewAllLayers={beginAllClustersFromIntro}
           showAllLayers={showAllClusters}
@@ -2062,6 +2113,26 @@ export default function App() {
             <div className="pf-tree-edit-modal__actions">
               <button type="button" className="pf-tree-edit-modal__ghost" onClick={() => setClusterRenameDraft(null)}>Cancel</button>
               <button type="button" className="pf-tree-edit-modal__confirm" onClick={applyClusterRename}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {clusterDeleteDraft && (
+        <div className="pf-tree-edit-modal-backdrop" role="presentation" onMouseDown={() => setClusterDeleteDraft(null)}>
+          <div
+            className="pf-tree-edit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pf-cluster-delete-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div id="pf-cluster-delete-title" className="pf-tree-edit-modal__title">Delete cluster?</div>
+            <p className="pf-tree-edit-modal__body">
+              Delete <strong>{clusterDeleteDraft.label}</strong> from the mock workflow? Its local features and generated nodes will be removed from this session.
+            </p>
+            <div className="pf-tree-edit-modal__actions">
+              <button type="button" className="pf-tree-edit-modal__ghost" onClick={() => setClusterDeleteDraft(null)}>Cancel</button>
+              <button type="button" className="pf-tree-edit-modal__confirm pf-tree-edit-modal__confirm--danger" onClick={confirmClusterDelete}>Delete</button>
             </div>
           </div>
         </div>

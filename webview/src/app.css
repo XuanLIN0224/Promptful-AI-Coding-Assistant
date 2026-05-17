@@ -2040,7 +2040,7 @@
 
 .pf-layer__row {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 24px;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px;
   padding: 7px;
@@ -2048,6 +2048,7 @@
 
 .pf-layer__fold,
 .pf-layer__edit,
+.pf-layer__delete,
 .pf-layer__main,
 .pf-layer-node {
   border: 0;
@@ -2057,7 +2058,8 @@
 }
 
 .pf-layer__fold,
-.pf-layer__edit {
+.pf-layer__edit,
+.pf-layer__delete {
   width: 24px;
   height: 24px;
   border-radius: 8px;
@@ -2066,9 +2068,20 @@
 }
 
 .pf-layer__fold:hover,
-.pf-layer__edit:hover {
+.pf-layer__edit:hover,
+.pf-layer__delete:hover {
   background: rgba(0, 0, 0, 0.05);
   color: var(--text);
+}
+
+.pf-layer__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pf-layer__delete:hover {
+  color: #9a3412;
 }
 
 .pf-layer__main {
@@ -3604,6 +3617,17 @@
   color: var(--text);
 }
 
+.pf-tree-edit-modal__body {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pf-tree-edit-modal__body strong {
+  color: var(--text);
+}
+
 .pf-tree-edit-modal__field {
   display: flex;
   flex-direction: column;
@@ -3657,6 +3681,11 @@
   border-color: rgba(0, 113, 227, 0.24);
   background: var(--accent);
   color: #ffffff;
+}
+
+.pf-tree-edit-modal__confirm--danger {
+  border-color: rgba(217, 63, 50, 0.24);
+  background: #d93f32;
 }
 
 .pf-tree-generate-wrap {
