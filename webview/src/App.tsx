@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import type { OnSelectionChangeParams, Viewport } from "@xyflow/react";
 import type { ClusterId, DecisionNodePayload, DynamicDecisionNode, FeatureItem, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode, WorkspaceTab } from "./types";
@@ -6,6 +6,7 @@ import { CLUSTERS } from "./types";
 import { FeatureSidebar } from "./components/FeatureSidebar";
 import { IntroOverlay } from "./components/IntroOverlay";
 import type { IntroAttachment } from "./components/IntroOverlay";
+import { CanvasContextPanels } from "./components/CanvasContextPanels";
 import { PlanCanvas } from "./components/PlanCanvas";
 import { ProgramPane } from "./components/ProgramPane";
 import { assistantLineForProgramTab } from "./assistantLine";
@@ -269,6 +270,7 @@ export default function App() {
   const [planTreeSelections, setPlanTreeSelections] = useState<Partial<Record<PlanTreeKind, string | null>>>({});
   const [showAllClusters, setShowAllClusters] = useState(true);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
+  const planCanvasWrapRef = useRef<HTMLDivElement>(null);
   const [planViewportOverview, setPlanViewportOverview] = useState<Viewport | null>(null);
   const [planViewportNodegraph, setPlanViewportNodegraph] = useState<Viewport | null>(null);
   const [clusterFocus, setClusterFocus] = useState<ClusterId>("core");
@@ -299,6 +301,9 @@ export default function App() {
   const [moveDraft, setMoveDraft] = useState<null | { fromCluster: ClusterId; fromNode: string; toCluster: ClusterId; toNode: string }>(null);
   const [clusterCreateDraft, setClusterCreateDraft] = useState<null | { label: string }>(null);
   const [featureMenu, setFeatureMenu] = useState<null | { kind: "global" | "local"; id: string; label: string; clusterId: ClusterId; top: number; left: number }>(null);
+  const [clusterMenu, setClusterMenu] = useState<null | { clusterId: ClusterId; top: number; left: number }>(null);
+  const clusterMenuRef = useRef<HTMLDivElement>(null);
+  const featureMenuRef = useRef<HTMLDivElement>(null);
   const [featureActionDraft, setFeatureActionDraft] = useState<null | {
     action: "rename" | "delete";
     kind: "global" | "local";
@@ -528,6 +533,14 @@ export default function App() {
     setAssistantLine("General project view opened. The mock assistant will answer across all clusters.");
   }, []);
 
+  const selectClusterOverview = useCallback(() => {
+    setTab("plan");
+    setPlanMode("overview");
+    setShowAllClusters(true);
+    setPlanTreeSelections({});
+    setActiveContext(null);
+  }, []);
+
   const onFlowSelection = useCallback((p: OnSelectionChangeParams) => {
     const n = p.nodes[0];
     if (!n) {
@@ -563,16 +576,16 @@ export default function App() {
 
   const headerCrumb = useMemo(() => {
     switch (tab) {
+      case "source":
+        return "Source";
       case "program": {
         const p = programCatalog.find((t) => t.id === programTabId);
-        return p?.label ?? programCatalog[0]?.label ?? "Files";
+        return p?.label ?? programCatalog[0]?.label ?? "Program";
       }
       case "plan": {
         if (planMode === "nodegraph") return "Node graph";
         return clusterLabel(clusterFocus);
       }
-      default:
-        return programCatalog[0]?.label ?? "Plan";
     }
   }, [tab, planMode, clusterFocus, programTabId, programCatalog, clusterLabel]);
 
@@ -850,6 +863,12 @@ export default function App() {
   const removeSourceFromPanel = useCallback(
     (id: string) => {
       removeAttachmentMetadata(id);
+      setSourceAssignments((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       setSourceViewerId((prev) => (prev === id ? null : prev));
     },
     [removeAttachmentMetadata]
@@ -1264,6 +1283,17 @@ export default function App() {
     });
   }, [clusterLabel, decisionOutline]);
 
+  const openClusterCanvasMenu = useCallback((clusterId: ClusterId, event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const menuWidth = 136;
+    const gap = 10;
+    const preferredLeft = rect.right + gap;
+    const left = Math.max(12, Math.min(preferredLeft, window.innerWidth - menuWidth - 12));
+    const top = Math.max(12, Math.min(rect.top, window.innerHeight - 120));
+    setClusterMenu({ clusterId, top, left });
+  }, []);
+
   const openClusterRename = useCallback((cluster: ClusterId) => {
     setClusterRenameDraft({ id: cluster, label: clusterLabel(cluster) });
   }, [clusterLabel]);
@@ -1279,6 +1309,50 @@ export default function App() {
   const openClusterDelete = useCallback((cluster: ClusterId) => {
     setClusterDeleteDraft({ id: cluster, label: clusterLabel(cluster) });
   }, [clusterLabel]);
+
+  const handleClusterMenuAction = useCallback(
+    (action: "rename" | "delete") => {
+      if (!clusterMenu) return;
+      if (action === "rename") openClusterRename(clusterMenu.clusterId);
+      else openClusterDelete(clusterMenu.clusterId);
+      setClusterMenu(null);
+    },
+    [clusterMenu, openClusterRename, openClusterDelete]
+  );
+
+  useEffect(() => {
+    if (!clusterMenu) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (clusterMenuRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest(".pf-cluster-frame__menu")) return;
+      setClusterMenu(null);
+    };
+    const timer = window.setTimeout(() => {
+      document.addEventListener("pointerdown", onPointerDown, true);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [clusterMenu]);
+
+  useEffect(() => {
+    if (!featureMenu) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (featureMenuRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest(".pf-context-chip__menu")) return;
+      setFeatureMenu(null);
+    };
+    const timer = window.setTimeout(() => {
+      document.addEventListener("pointerdown", onPointerDown, true);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [featureMenu]);
 
   const confirmClusterDelete = useCallback(() => {
     if (!clusterDeleteDraft) return;
@@ -1457,6 +1531,7 @@ export default function App() {
     <div className="pf-shell">
       {featureMenu && createPortal(
         <div
+          ref={featureMenuRef}
           className="pf-context-chip__portal-menu"
           role="menu"
           aria-label={`${featureMenu.label} actions`}
@@ -1467,6 +1542,24 @@ export default function App() {
             Rename
           </button>
           <button type="button" role="menuitem" onClick={() => handleFeatureMenuAction("delete")}>
+            Delete
+          </button>
+        </div>,
+        document.body
+      )}
+      {clusterMenu && createPortal(
+        <div
+          ref={clusterMenuRef}
+          className="pf-context-chip__portal-menu"
+          role="menu"
+          aria-label="Cluster actions"
+          style={{ top: clusterMenu.top, left: clusterMenu.left }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <button type="button" role="menuitem" onClick={() => handleClusterMenuAction("rename")}>
+            Rename
+          </button>
+          <button type="button" role="menuitem" onClick={() => handleClusterMenuAction("delete")}>
             Delete
           </button>
         </div>,
@@ -1709,17 +1802,6 @@ export default function App() {
 
       <header className="pf-top">
         <div className="pf-top__row">
-          <button
-            type="button"
-            className="pf-home"
-            aria-label="Back to start"
-            title="Back to start"
-            onClick={() => setShowIntro(true)}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z" />
-            </svg>
-          </button>
           <div className="pf-tabs">
             {(
               [
@@ -1794,7 +1876,7 @@ export default function App() {
                     </button>
                   </div>
                 </div>
-                <div className="pf-plan-canvas-wrap">
+                <div className="pf-plan-canvas-wrap" ref={planCanvasWrapRef}>
                   <div className={`pf-canvas-legend ${legendCollapsed ? "pf-canvas-legend--collapsed" : ""}`} aria-label="Cluster legend">
                     <button
                       type="button"
@@ -1812,84 +1894,35 @@ export default function App() {
                       </span>
                     ))}
                   </div>
-                  <div className="pf-canvas-context" onMouseDown={(event) => event.stopPropagation()}>
-                    <section className="pf-context-card pf-context-card--global" aria-label="Global features">
-                      <button
-                        type="button"
-                        className="pf-context-card__head pf-context-card__head--button"
-                        onClick={() => setCanvasContextOpen((prev) => ({ ...prev, global: !prev.global }))}
-                      >
-                        <span>Global</span>
-                        <span>{canvasContextOpen.global ? "−" : "+"}</span>
-                      </button>
-                      {canvasContextOpen.global && (
-                        <div className="pf-context-card__list">
-                          {visibleGlobalFeatures.length === 0 ? (
-                            <div className="pf-context-card__empty">{topSearchNorm ? "No global feature matches." : "No global features yet."}</div>
-                          ) : (
-                            visibleGlobalFeatures.map((item) => (
-                              <div
-                                key={item.id}
-                                className={`pf-context-chip ${activeContext?.kind === "global" && activeContext.id === item.id ? "pf-context-chip--active" : ""}`}
-                              >
-                                <button type="button" className="pf-context-chip__label" onClick={() => setActiveContext({ kind: "global", id: item.id })}>
-                                  {item.label}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="pf-context-chip__menu"
-                                  aria-label={`Edit ${item.label}`}
-                                  onClick={(event) => openFeatureMenu(event, { kind: "global", id: item.id, label: item.label })}
-                                >
-                                  ⋯
-                                </button>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </section>
-                    <section className="pf-context-card pf-context-card--local" aria-label="Local features">
-                      <button
-                        type="button"
-                        className="pf-context-card__head pf-context-card__head--button"
-                        onClick={() => setCanvasContextOpen((prev) => ({ ...prev, local: !prev.local }))}
-                      >
-                        <span>
-                          Local <span style={visibleClusters.find((cluster) => cluster.id === clusterFocus)?.hex ? { color: visibleClusters.find((cluster) => cluster.id === clusterFocus)?.hex } : undefined}>{clusterLabel(clusterFocus)}</span>
+                  <CanvasContextPanels
+                    boundsRef={planCanvasWrapRef}
+                    open={canvasContextOpen}
+                    onToggleOpen={(panel) => setCanvasContextOpen((prev) => ({ ...prev, [panel]: !prev[panel] }))}
+                    globalFeatures={visibleGlobalFeatures}
+                    localFeatures={visibleLocalFeatures}
+                    activeContext={activeContext}
+                    onSelectContext={(ctx) => setActiveContext(ctx)}
+                    onOpenFeatureMenu={openFeatureMenu}
+                    emptyGlobal={topSearchNorm ? "No global feature matches." : "No global features yet."}
+                    emptyLocal={topSearchNorm ? "No local feature matches." : "Generate features from a decision node."}
+                    localTitle={
+                      <>
+                        Local{" "}
+                        <span
+                          style={
+                            visibleClusters.find((cluster) => cluster.id === clusterFocus)?.hex
+                              ? { color: visibleClusters.find((cluster) => cluster.id === clusterFocus)?.hex }
+                              : undefined
+                          }
+                        >
+                          {clusterLabel(clusterFocus)}
                         </span>
-                        <span>{canvasContextOpen.local ? "−" : "+"}</span>
-                      </button>
-                      {canvasContextOpen.local && (
-                        <div className="pf-context-card__list">
-                          {visibleLocalFeatures.length === 0 ? (
-                            <div className="pf-context-card__empty">{topSearchNorm ? "No local feature matches." : "Generate features from a decision node."}</div>
-                          ) : (
-                            visibleLocalFeatures.map((item) => (
-                              <div
-                                key={item.id}
-                                className={`pf-context-chip pf-context-chip--local ${activeContext?.kind === "local" && activeContext.id === item.id ? "pf-context-chip--active" : ""}`}
-                              >
-                                <button type="button" className="pf-context-chip__label" onClick={() => setActiveContext({ kind: "local", id: item.id })}>
-                                  {item.label}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="pf-context-chip__menu"
-                                  aria-label={`Edit ${item.label}`}
-                                  onClick={(event) => openFeatureMenu(event, { kind: "local", id: item.id, label: item.label })}
-                                >
-                                  ⋯
-                                </button>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </section>
-                  </div>
+                      </>
+                    }
+                  />
                   <PlanCanvas
                     mode={planMode}
+                    workspaceFilePaths={programCatalog.map((f) => f.path)}
                     planExplorerTabId={planExplorerTabId}
                     planClusterFocus={clusterFocus}
                     enabledClusterIds={visibleClusterIds}
@@ -1898,6 +1931,7 @@ export default function App() {
                     planTreeSelections={planTreeSelections}
                     onPlanTreeSelectionsChange={handlePlanTreeSelectionsChange}
                     onClusterFocusChange={setClusterFocus}
+                    onNavigateCluster={navigateCluster}
                     showAllClusters={showAllClusters}
                     onToggleShowAllClusters={toggleShowAllClusters}
                     savedViewport={savedPlanViewport}
@@ -1914,6 +1948,7 @@ export default function App() {
                     onClusterComplete={handleClusterComplete}
                     onTreeUndoNode={handleTreeUndoNode}
                     onTreeNodesCollapsed={handleTreeNodesCollapsed}
+                    onOpenClusterMenu={openClusterCanvasMenu}
                   />
                 </div>
               </>
@@ -2050,7 +2085,6 @@ export default function App() {
           clusters={visibleClusters}
           decisionOutline={decisionOutline}
           activeNodeId={activeContext?.kind === "node" ? activeContext.id : null}
-          sources={sourceItems}
           programFiles={programFileItems}
           onPickProgramFile={pickProgramFileFromSidebar}
           onNavigateLocalFeature={navigateLocalFeature}
@@ -2059,7 +2093,7 @@ export default function App() {
           onRenameCluster={openClusterRename}
           onDeleteCluster={openClusterDelete}
           onAddCluster={prepareCreateCluster}
-          onViewAllLayers={beginAllClustersFromIntro}
+          onViewAllLayers={selectClusterOverview}
           showAllLayers={showAllClusters}
           searchValue={topSearch}
           onSearchChange={setTopSearch}
@@ -2075,8 +2109,6 @@ export default function App() {
           onReorderLocal={(cluster, items) => setLocalByCluster((p) => ({ ...p, [cluster]: items }))}
           activeContext={activeContext}
           onSelectContext={setActiveContext}
-          onOpenSource={setSourceViewerId}
-          onRemoveSource={removeSourceFromPanel}
           onAddSource={(kind) => void addAttachmentMetadata(kind === "link" ? "link" : "upload")}
           expandNodeTool={expandNodeTool}
           onExpandNodeToolChange={setExpandNodeTool}

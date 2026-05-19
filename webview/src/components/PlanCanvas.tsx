@@ -26,6 +26,7 @@ import {
   type ReactFlowInstance,
   type Viewport,
 } from "@xyflow/react";
+import { ClusterCanvasActionsContext, type ClusterCanvasActions } from "../flow/clusterCanvasContext";
 import { FileGraphCenterEdge } from "../flow/fileGraphEdge";
 import { planNodeTypes } from "../flow/nodeTypes";
 import { computeFileGraphLayout } from "../forceLayout";
@@ -289,11 +290,26 @@ function appendDynamicDecisionNodes(base: { nodes: Node[]; edges: Edge[] }, dyna
   return extra.length > 0 ? { nodes: [...base.nodes, ...extra], edges: [...base.edges, ...extraEdges] } : base;
 }
 
-function fileGraphPack(): { nodes: Node[]; edges: Edge[] } {
-  const baseNodes = fileGraphNodes as Node<FileGraphPayload>[];
-  const positions = computeFileGraphLayout(baseNodes, fileGraphEdges);
+function fileBaseName(path: string): string {
+  const norm = path.replace(/\\/g, "/");
+  const last = norm.split("/").pop();
+  return last && last.length > 0 ? last : path;
+}
+
+/** File graph reflects workspace files only (empty until Apply plan writes sources). */
+function fileGraphPack(workspaceFilePaths: readonly string[]): { nodes: Node[]; edges: Edge[] } {
+  if (workspaceFilePaths.length === 0) {
+    return { nodes: [], edges: [] };
+  }
+  const presentNames = new Set(workspaceFilePaths.map((p) => fileBaseName(p).toLowerCase()));
+  const baseNodes = (fileGraphNodes as Node<FileGraphPayload>[]).filter((n) =>
+    presentNames.has(n.data.path.toLowerCase())
+  );
+  const nodeIds = new Set(baseNodes.map((n) => n.id));
+  const graphEdges = fileGraphEdges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
+  const positions = computeFileGraphLayout(baseNodes, graphEdges);
   return {
-    edges: fileGraphEdges,
+    edges: graphEdges,
     nodes: baseNodes.map((n) => ({
       ...n,
       position: positions.get(n.id) ?? { x: 380, y: 320 },
@@ -306,6 +322,7 @@ function fileGraphPack(): { nodes: Node[]; edges: Edge[] } {
 
 function Inner({
   mode,
+  workspaceFilePaths,
   planExplorerTabId,
   planClusterFocus,
   enabledClusterIds,
@@ -314,6 +331,7 @@ function Inner({
   planTreeSelections,
   onPlanTreeSelectionsChange,
   onClusterFocusChange,
+  onNavigateCluster,
   showAllClusters,
   onToggleShowAllClusters,
   savedViewport,
@@ -331,8 +349,11 @@ function Inner({
   onClusterComplete,
   onTreeUndoNode,
   onTreeNodesCollapsed,
+  onOpenClusterMenu,
 }: {
   mode: PlanCanvasMode;
+  onOpenClusterMenu?: ClusterCanvasActions["openClusterMenu"];
+  workspaceFilePaths: readonly string[];
   planExplorerTabId: string;
   planClusterFocus: ClusterId;
   enabledClusterIds: readonly ClusterId[];
@@ -341,6 +362,7 @@ function Inner({
   planTreeSelections: Partial<Record<PlanTreeKind, string | null>>;
   onPlanTreeSelectionsChange: Dispatch<SetStateAction<Partial<Record<PlanTreeKind, string | null>>>>;
   onClusterFocusChange: (cluster: ClusterId) => void;
+  onNavigateCluster?: (cluster: ClusterId) => void;
   showAllClusters: boolean;
   onToggleShowAllClusters: () => void;
   savedViewport: Viewport | null;
@@ -361,13 +383,17 @@ function Inner({
 }) {
   const isOverview = mode === "overview";
   const isGraph = mode === "nodegraph";
+  const clusterCanvasActions = useMemo<ClusterCanvasActions | null>(
+    () => (isOverview && onOpenClusterMenu ? { openClusterMenu: onOpenClusterMenu } : null),
+    [isOverview, onOpenClusterMenu]
+  );
   const overviewPack = useMemo(() => {
     const rootScoped = applyRootOnlyClusters(clusterOverviewPack(enabledClusterIds), rootOnlyClusterIds, clusterLabels);
     const withMoved = appendMovedRootNodes(rootScoped, movedRootNodes);
     return appendDynamicDecisionNodes(withMoved, dynamicDecisionNodes);
   }, [enabledClusterIds, rootOnlyClusterIds, clusterLabels, movedRootNodes, dynamicDecisionNodes]);
   const enabledClusterSet = useMemo(() => new Set(enabledClusterIds), [enabledClusterIds]);
-  const graphPack = useMemo(() => fileGraphPack(), []);
+  const graphPack = useMemo(() => fileGraphPack(workspaceFilePaths), [workspaceFilePaths]);
   const allTreeParents = useMemo(() => parentIdsFromEdges(overviewPack.edges), [overviewPack.edges]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(
@@ -396,7 +422,15 @@ function Inner({
       if (!inst) return;
       if (isOverview) {
         if (showAllClusters) {
-          void inst.fitView({ padding: 0.18, maxZoom: 0.82, duration });
+          const frameIds = inst
+            .getNodes()
+            .filter((n) => n.type === "clusterFrame" && (n.data as ClusterFrameData)?.clusterMat)
+            .map((n) => ({ id: n.id }));
+          if (frameIds.length > 0) {
+            void inst.fitView({ nodes: frameIds, padding: 0.1, maxZoom: 1.12, duration });
+            return;
+          }
+          void inst.fitView({ padding: 0.1, maxZoom: 1.12, duration });
           return;
         }
         const kind = planClusterFocus as PlanTreeKind;
@@ -555,11 +589,20 @@ function Inner({
           },
         };
       });
-      const graphEdges = edges.map((e) => ({
-        ...e,
-        type: "fileGraphCenter" as const,
-        style: { ...e.style, opacity: focusId ? 0.5 : 0.34, stroke: "rgba(29,29,31,0.18)", strokeWidth: 1.2 },
-      }));
+      const graphEdges = edges.map((e) => {
+        const direct = focusId ? e.source === focusId || e.target === focusId : false;
+        return {
+          ...e,
+          type: "fileGraphCenter" as const,
+          hidden: focusId ? !direct : false,
+          style: {
+            ...e.style,
+            opacity: focusId ? (direct ? 0.62 : 0) : 0.34,
+            stroke: direct ? "rgba(29,29,31,0.36)" : "rgba(29,29,31,0.18)",
+            strokeWidth: direct ? 1.45 : 1.2,
+          },
+        };
+      });
       return { viewNodes: graphNodes, viewEdges: graphEdges };
     }
 
@@ -581,7 +624,12 @@ function Inner({
           ...n,
           hidden,
           draggable: showAllClusters,
-          data: { ...d, label: clusterLabels[d.clusterId] ?? d.label, clusterMat: true },
+          data: {
+            ...d,
+            label: clusterLabels[d.clusterId] ?? d.label,
+            clusterMat: true,
+            overviewSelectable: showAllClusters,
+          },
         };
       }
       if (n.type !== "decision" && n.type !== "branch") return { ...n, hidden };
@@ -787,23 +835,20 @@ function Inner({
 
   const handleTreeClick = useCallback(
     (node: Node) => {
-      if (isOverview && node.type === "clusterFrame") {
-        const kind = planKindFromClusterFrameId(node.id);
-        if (!kind) return;
-        onClusterFocusChange(kind as ClusterId);
-        const inst = flowInstanceRef.current;
-        if (inst) {
-          const nodesToFit = nodesArgForClusterFit(kind, inst.getNodes());
-          requestAnimationFrame(() => {
-            void inst.fitView({
-              nodes: nodesToFit.length > 0 ? nodesToFit : [{ id: node.id }],
-              padding: 0.22,
-              maxZoom: 1.35,
-              duration: 360,
-            });
-          });
+      if (isOverview && showAllClusters && onNavigateCluster) {
+        let kind: PlanTreeKind | null = null;
+        if (node.type === "clusterFrame") {
+          kind = planKindFromClusterFrameId(node.id);
+        } else if (node.type === "decision" || node.type === "branch") {
+          kind =
+            kindFromNodeId(node.id) ??
+            ((node.data as Partial<DecisionNodePayload>).clusterId as PlanTreeKind | undefined) ??
+            null;
         }
-        return;
+        if (kind) {
+          onNavigateCluster(kind as ClusterId);
+          return;
+        }
       }
       if (!isOverview || (node.type !== "decision" && node.type !== "branch")) return;
       const kind = kindFromNodeId(node.id) ?? (node.data as Partial<DecisionNodePayload>).clusterId;
@@ -871,11 +916,14 @@ function Inner({
       planTreeSelections,
       treeParentChoiceByKind,
       onClusterFocusChange,
+      onNavigateCluster,
       rootOnlyClusterIds,
+      showAllClusters,
     ]
   );
 
   return (
+  <ClusterCanvasActionsContext.Provider value={clusterCanvasActions}>
     <>
       <ReactFlow
         nodes={viewNodes}
@@ -1021,11 +1069,13 @@ function Inner({
         </div>
       )}
     </>
+  </ClusterCanvasActionsContext.Provider>
   );
 }
 
 export function PlanCanvas({
   mode,
+  workspaceFilePaths,
   planExplorerTabId,
   planClusterFocus,
   enabledClusterIds,
@@ -1034,6 +1084,7 @@ export function PlanCanvas({
   planTreeSelections,
   onPlanTreeSelectionsChange,
   onClusterFocusChange,
+  onNavigateCluster,
   showAllClusters,
   onToggleShowAllClusters,
   savedViewport,
@@ -1051,8 +1102,11 @@ export function PlanCanvas({
   onClusterComplete,
   onTreeUndoNode,
   onTreeNodesCollapsed,
+  onOpenClusterMenu,
 }: {
   mode: PlanCanvasMode;
+  onOpenClusterMenu?: ClusterCanvasActions["openClusterMenu"];
+  workspaceFilePaths: readonly string[];
   planExplorerTabId: string;
   planClusterFocus: ClusterId;
   enabledClusterIds: readonly ClusterId[];
@@ -1061,6 +1115,7 @@ export function PlanCanvas({
   planTreeSelections: Partial<Record<PlanTreeKind, string | null>>;
   onPlanTreeSelectionsChange: Dispatch<SetStateAction<Partial<Record<PlanTreeKind, string | null>>>>;
   onClusterFocusChange: (cluster: ClusterId) => void;
+  onNavigateCluster?: (cluster: ClusterId) => void;
   showAllClusters: boolean;
   onToggleShowAllClusters: () => void;
   savedViewport: Viewport | null;
@@ -1086,6 +1141,7 @@ export function PlanCanvas({
         <ReactFlowProvider>
           <Inner
             mode={mode}
+            workspaceFilePaths={workspaceFilePaths}
             planExplorerTabId={planExplorerTabId}
             planClusterFocus={planClusterFocus}
             enabledClusterIds={enabledClusterIds}
@@ -1094,6 +1150,7 @@ export function PlanCanvas({
             planTreeSelections={planTreeSelections}
             onPlanTreeSelectionsChange={onPlanTreeSelectionsChange}
             onClusterFocusChange={onClusterFocusChange}
+            onNavigateCluster={onNavigateCluster}
             showAllClusters={showAllClusters}
             onToggleShowAllClusters={onToggleShowAllClusters}
             savedViewport={savedViewport}
@@ -1111,6 +1168,7 @@ export function PlanCanvas({
             onClusterComplete={onClusterComplete}
             onTreeUndoNode={onTreeUndoNode}
             onTreeNodesCollapsed={onTreeNodesCollapsed}
+            onOpenClusterMenu={onOpenClusterMenu}
           />
         </ReactFlowProvider>
       </div>

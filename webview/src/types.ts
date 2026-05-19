@@ -133,6 +133,8 @@ export interface ClusterFrameData {
   treeTint?: number;
   /** Cluster canvas tab: same hue, light mat; frames do not clip nodes (see flows - no extent) */
   clusterMat?: boolean;
+  /** Overview mode: frame receives clicks to zoom into this cluster */
+  overviewSelectable?: boolean;
 }
 
 export interface MockPromptRecord {

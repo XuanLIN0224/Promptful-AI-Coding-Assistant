@@ -1,8 +1,9 @@
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { ClusterFrameData, ClusterId, DecisionNodePayload, FileGraphPayload } from "../types";
 import { CLUSTERS } from "../types";
 import { SourceIcon } from "../components/SourceIcon";
+import { useClusterCanvasActions } from "./clusterCanvasContext";
 
 function clusterColor(id: DecisionNodePayload["clusterId"]): string {
   return CLUSTERS.find((c) => c.id === id)?.color ?? "var(--text-secondary)";
@@ -64,92 +65,81 @@ function TreeExpandButton({
   );
 }
 
-function TreeGenerateButton({
+function TreeNodeMenuButton({
   generated,
   onGenerate,
+  onEdit,
+  onMove,
 }: {
   generated?: boolean;
   onGenerate?: (target: "global" | "local") => void;
+  onEdit?: () => void;
+  onMove?: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const hasMenu = !!(onGenerate || onEdit || onMove);
+
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: globalThis.MouseEvent) => {
+      if (wrapRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", dismiss);
+    return () => document.removeEventListener("mousedown", dismiss);
+  }, [open]);
+
+  if (!hasMenu) return null;
+
+  const run = (action: () => void) => (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    setOpen(false);
+    action();
+  };
+
   return (
-    <div className="pf-tree-generate-wrap nodrag">
+    <div ref={wrapRef} className={`pf-tree-menu-wrap nodrag${open ? " pf-tree-menu-wrap--open" : ""}`}>
       <button
         type="button"
-        className={`pf-tree-generate ${generated ? "pf-tree-generate--done" : ""}`}
-        aria-label="Add generated feature"
-        title="Add generated feature"
+        className={`pf-tree-menu-btn ${generated ? "pf-tree-menu-btn--done" : ""}`}
+        aria-label="Node options"
+        title="Node options"
+        aria-haspopup="menu"
+        aria-expanded={open}
         onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((value) => !value);
+        }}
       >
-        <span aria-hidden>+</span>
+        ⋯
       </button>
-      <div className="pf-tree-generate-menu" role="menu" aria-label="Generate feature destination">
-        <button
-          type="button"
-          role="menuitem"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onGenerate?.("local");
-          }}
-        >
-          add to local features
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onGenerate?.("global");
-          }}
-        >
-          add to global features
-        </button>
-      </div>
+      {open ? (
+        <div className="pf-tree-menu" role="menu" aria-label="Node options" onPointerDown={(e) => e.stopPropagation()}>
+          {onGenerate ? (
+            <>
+              <button type="button" role="menuitem" onClick={run(() => onGenerate("local"))}>
+                Add to local features
+              </button>
+              <button type="button" role="menuitem" onClick={run(() => onGenerate("global"))}>
+                Add to global features
+              </button>
+            </>
+          ) : null}
+          {onEdit ? (
+            <button type="button" role="menuitem" onClick={run(onEdit)}>
+              Rename
+            </button>
+          ) : null}
+          {onMove ? (
+            <button type="button" role="menuitem" onClick={run(onMove)}>
+              Move node
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
-  );
-}
-
-function TreeEditButton({ onEdit }: { onEdit: () => void }) {
-  return (
-    <button
-      type="button"
-      className="pf-tree-edit nodrag"
-      aria-label="Edit decision node"
-      title="Edit node text"
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        onEdit();
-      }}
-    >
-      <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M12 20h9" />
-        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-      </svg>
-    </button>
-  );
-}
-
-function TreeMoveButton({ onMove }: { onMove: () => void }) {
-  return (
-    <button
-      type="button"
-      className="pf-tree-edit nodrag"
-      aria-label="Move node"
-      title="Move node"
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        onMove();
-      }}
-    >
-      <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M7 7h10v10" />
-        <path d="M7 17 17 7" />
-      </svg>
-    </button>
   );
 }
 
@@ -222,9 +212,12 @@ export function DecisionNode({ id, data, selected }: NodeProps<DecisionNodePaylo
       <div className="pf-node__head">
         <span className="pf-node__title">{data.title}</span>
         <div className="pf-node__tools nodrag">
-          <TreeGenerateButton generated={data.featuresGenerated} onGenerate={(target) => data.onGenerateFeatures?.(id, target)} />
-          {data.onEditNode ? <TreeEditButton onEdit={() => data.onEditNode?.(id)} /> : null}
-          {data.onMoveNode ? <TreeMoveButton onMove={() => data.onMoveNode?.(id, data.clusterId)} /> : null}
+          <TreeNodeMenuButton
+            generated={data.featuresGenerated}
+            onGenerate={data.onGenerateFeatures ? (target) => data.onGenerateFeatures?.(id, target) : undefined}
+            onEdit={data.onEditNode ? () => data.onEditNode?.(id) : undefined}
+            onMove={data.onMoveNode ? () => data.onMoveNode?.(id, data.clusterId) : undefined}
+          />
           {data.treeCanToggleChildren ? (
             <TreeExpandButton expanded={data.treeChildrenExpanded !== false} onToggle={() => data.onTreeToggleChildren?.(id)} />
           ) : null}
@@ -281,9 +274,12 @@ export function BranchNode({ id, data, selected }: NodeProps<DecisionNodePayload
           {data.title}
         </span>
         <div className="pf-node__tools nodrag">
-          <TreeGenerateButton generated={data.featuresGenerated} onGenerate={(target) => data.onGenerateFeatures?.(id, target)} />
-          {data.onEditNode ? <TreeEditButton onEdit={() => data.onEditNode?.(id)} /> : null}
-          {data.onMoveNode ? <TreeMoveButton onMove={() => data.onMoveNode?.(id, data.clusterId)} /> : null}
+          <TreeNodeMenuButton
+            generated={data.featuresGenerated}
+            onGenerate={data.onGenerateFeatures ? (target) => data.onGenerateFeatures?.(id, target) : undefined}
+            onEdit={data.onEditNode ? () => data.onEditNode?.(id) : undefined}
+            onMove={data.onMoveNode ? () => data.onMoveNode?.(id, data.clusterId) : undefined}
+          />
           {data.treeCanToggleChildren ? (
             <TreeExpandButton expanded={data.treeChildrenExpanded !== false} onToggle={() => data.onTreeToggleChildren?.(id)} />
           ) : null}
@@ -309,9 +305,11 @@ export function BranchNode({ id, data, selected }: NodeProps<DecisionNodePayload
 }
 
 export function ClusterFrameNode({ data }: NodeProps<ClusterFrameData>) {
+  const clusterActions = useClusterCanvasActions();
   const c = CLUSTERS.find((x) => x.id === data.clusterId);
   const treeBackdrop = !!(data.treeBackdrop && c);
   const clusterMat = !!(data.clusterMat && c);
+  const overviewHit = !!(clusterMat && data.overviewSelectable);
   const tint = data.treeTint ?? 0.1;
   const { r, g, b } = hexToRgb(c?.hex ?? "#ffcc00");
 
@@ -334,6 +332,7 @@ export function ClusterFrameNode({ data }: NodeProps<ClusterFrameData>) {
     style.boxShadow = `inset 0 0 180px rgba(${r},${g},${b},0.022)`;
   } else if (clusterMat) {
     frameClass += " pf-cluster-frame--cluster-mat";
+    if (overviewHit) frameClass += " pf-cluster-frame--overview-hit";
     style.background = `linear-gradient(168deg, rgba(${r},${g},${b},${matWash}), rgba(${r},${g},${b},${matWashSoft}), rgba(255,255,255,0.96))`;
     style.boxShadow = `inset 0 0 130px rgba(${r},${g},${b},0.048)`;
   } else {
@@ -342,7 +341,27 @@ export function ClusterFrameNode({ data }: NodeProps<ClusterFrameData>) {
 
   return (
     <div className={frameClass} style={style}>
-      <div className="pf-cluster-frame__label">{data.label}</div>
+      {clusterMat ? (
+        <div className="pf-cluster-frame__header">
+          <span className="pf-cluster-frame__label">{data.label}</span>
+          {clusterActions ? (
+            <button
+              type="button"
+              className="pf-cluster-frame__menu"
+              aria-label={`${data.label} options`}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                clusterActions.openClusterMenu(data.clusterId, event);
+              }}
+            >
+              ⋯
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="pf-cluster-frame__label">{data.label}</div>
+      )}
     </div>
   );
 }
@@ -412,7 +431,7 @@ function Pie({ share }: { share: FileGraphPayload["clusterShare"] }) {
       </svg>
       {hoverMeta && hp && (
         <span
-          className="pf-file-node__slice-label"
+          className={`pf-file-node__slice-label${hp.ly > cy ? " pf-file-node__slice-label--above" : ""}`}
           style={{
             left: `${(hp.lx / 52) * 100}%`,
             top: `${(hp.ly / 52) * 100}%`,

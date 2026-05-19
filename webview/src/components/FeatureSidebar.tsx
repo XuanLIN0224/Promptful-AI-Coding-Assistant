@@ -30,6 +30,11 @@ type ChatHistoryItem = {
   text: string;
 };
 
+function layerNodeLevelLabel(depth: number): string {
+  if (depth <= 0) return "root";
+  return `lv.${depth}`;
+}
+
 function rgbaFromHex(hex: string, alpha: number): string {
   const raw = hex.replace("#", "");
   const full = raw.length === 3 ? raw.split("").map((ch) => ch + ch).join("") : raw;
@@ -329,7 +334,6 @@ export function FeatureSidebar({
   localByCluster,
   decisionOutline,
   activeNodeId,
-  sources,
   programFiles,
   onPickProgramFile,
   onNavigateLocalFeature,
@@ -355,8 +359,6 @@ export function FeatureSidebar({
   onReorderLocal,
   activeContext,
   onSelectContext,
-  onOpenSource,
-  onRemoveSource,
   onAddSource,
   expandNodeTool,
   onExpandNodeToolChange,
@@ -372,7 +374,6 @@ export function FeatureSidebar({
   localByCluster: Record<ClusterId, FeatureItem[]>;
   decisionOutline?: Partial<Record<ClusterId, DecisionOutlineItem[]>>;
   activeNodeId?: string | null;
-  sources: Array<{ id: string; kind: "link" | "document" | "video" | "image"; label: string }>;
   /** Workspace files (Program tab) — searchable from the sidebar. */
   programFiles?: Array<{ id: string; label: string; path: string }>;
   onPickProgramFile?: (fileId: string) => void;
@@ -409,8 +410,6 @@ export function FeatureSidebar({
     | { kind: "node"; id: string; clusterId: ClusterId; label: string }
     | null;
   onSelectContext: (ctx: { kind: "global" | "local"; id: string }) => void;
-  onOpenSource: (attachmentId: string) => void;
-  onRemoveSource: (attachmentId: string) => void;
   onAddSource: (kind: "link" | "upload") => void;
   expandNodeTool: boolean;
   onExpandNodeToolChange: (value: boolean) => void;
@@ -555,6 +554,14 @@ export function FeatureSidebar({
     const el = chatHistoryRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [chatHistory?.length]);
+
+  useEffect(() => {
+    if (showAllLayers) {
+      setOpenLayerIds(new Set());
+      return;
+    }
+    setOpenLayerIds(new Set([clusterId]));
+  }, [showAllLayers, clusterId]);
 
   const confirmFeatureRename = () => {
     if (!renameTarget) return;
@@ -790,31 +797,32 @@ export function FeatureSidebar({
             <span>Cluster layers</span>
           </div>
           <div className="pf-layer-navigator" aria-label="Cluster navigator">
+            {onViewAllLayers ? (
+              <button
+                type="button"
+                className={`pf-layer-nav-overview ${showAllLayers ? "pf-layer-nav-overview--active" : ""}`}
+                title="Overview — all clusters"
+                aria-label="Overview — all clusters"
+                aria-pressed={showAllLayers}
+                onClick={onViewAllLayers}
+              >
+                <span className="pf-layer-nav-overview__dot" aria-hidden />
+              </button>
+            ) : null}
             {(filterActive ? clustersForAnalytics : analyticsClusters).map((cl) => (
               <button
                 key={cl.id}
                 type="button"
                 className={`pf-layer-nav-dot ${!showAllLayers && cl.id === clusterId ? "pf-layer-nav-dot--active" : ""}`}
                 style={{ background: cl.color }}
-                title={`Navigate to ${cl.label}`}
-                aria-label={`Navigate to ${cl.label}`}
+                title={`Zoom to ${cl.label}`}
+                aria-label={`Zoom to ${cl.label}`}
                 onClick={() => onNavigateCluster?.(cl.id)}
               />
             ))}
             {onAddCluster && !filterActive ? (
               <button type="button" className="pf-layer-add" title="Create cluster" aria-label="Create cluster" onClick={onAddCluster}>
                 +
-              </button>
-            ) : null}
-            {onViewAllLayers ? (
-              <button
-                type="button"
-                className={`pf-layer-viewall ${showAllLayers ? "pf-layer-viewall--active" : ""}`}
-                title="View all clusters"
-                aria-label="View all clusters"
-                onClick={onViewAllLayers}
-              >
-                ⛶
               </button>
             ) : null}
           </div>
@@ -894,7 +902,7 @@ export function FeatureSidebar({
                                 onClick={() => onNavigateDecisionNode?.(cl.id, item)}
                               >
                                 <span className="pf-layer-node__name">{item.title}</span>
-                                <span className="pf-layer-node__meta">{item.depth === 0 ? "root" : "node"}</span>
+                                <span className="pf-layer-node__meta">{layerNodeLevelLabel(item.depth)}</span>
                               </button>
                             </div>
                           ))
@@ -917,22 +925,6 @@ export function FeatureSidebar({
           <section className="pf-layer-panel pf-layer-panel--chat" aria-label="Mock assistant chat">
           <div className="pf-layer-panel__head">Chat</div>
           <div className="pf-chat-card">
-            {sources.length > 0 && (
-              <div className="pf-chat-sources" aria-label="Sources added to chat">
-                {sources.slice(0, 4).map((s) => (
-                  <span key={s.id} className="pf-chat-source">
-                    <button type="button" onClick={() => onOpenSource(s.id)} title={s.label}>
-                      {s.kind}
-                    </button>
-                    <span>{s.label}</span>
-                    <button type="button" aria-label={`Remove ${s.label}`} onClick={() => onRemoveSource(s.id)}>
-                      ×
-                    </button>
-                  </span>
-                ))}
-                {sources.length > 4 ? <span className="pf-chat-source pf-chat-source--more">+{sources.length - 4}</span> : null}
-              </div>
-            )}
             {chatMode === "move" && (
               <div className="pf-move-box" aria-label="Move node controls">
                 <div className="pf-move-row">
@@ -1026,10 +1018,11 @@ export function FeatureSidebar({
                   type="button"
                   className={`pf-chat-expand-button ${expandNodeTool ? "pf-chat-expand-button--on" : ""}`}
                   aria-pressed={expandNodeTool}
+                  aria-label="Expand node"
                   title="Expand node"
                   onClick={() => onExpandNodeToolChange(!expandNodeTool)}
                 >
-                  Expand node
+                  Expand
                 </button>
                 <button type="button" onClick={onComposerSubmit} disabled={!composerPrompt?.trim()}>
                   Send

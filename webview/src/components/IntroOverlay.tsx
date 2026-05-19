@@ -4,6 +4,15 @@ import type { ClusterId, ClusterMeta } from "../types";
 /** Placeholder names only - this mock never calls a real model or API. */
 const MOCK_MODELS = ["ChatGPT", "Gemini", "Claude", "Copilot", "Promptful Mock"] as const;
 
+function AnalysisStatusLine({ done, pending, complete }: { done: boolean; pending: string; complete: string }) {
+  return (
+    <div className={`pf-intro__analysis-line${done ? " pf-intro__analysis-line--done" : ""}`}>
+      {done ? <span className="pf-intro__done" aria-hidden /> : <span className="pf-intro__spinner" aria-hidden />}
+      <span>{done ? complete : pending}</span>
+    </div>
+  );
+}
+
 export type IntroAttachment = {
   id: string;
   kind: "link" | "document" | "video" | "image";
@@ -53,8 +62,8 @@ export function IntroOverlay({
     onPromptSend();
     setAnalysisStarted(true);
     setAnalysisStep(0);
-    window.setTimeout(() => setAnalysisStep(1), 650);
-    window.setTimeout(() => setAnalysisStep(2), 1350);
+    window.setTimeout(() => setAnalysisStep(1), 1800);
+    window.setTimeout(() => setAnalysisStep(2), 3800);
   };
 
   return (
@@ -171,10 +180,11 @@ export function IntroOverlay({
             </div>
             {analysisStarted && (
               <div className="pf-intro__analysis" aria-live="polite">
-                <div className="pf-intro__analysis-line">
-                  <span className="pf-intro__spinner" aria-hidden />
-                  <span>Processing your query</span>
-                </div>
+                <AnalysisStatusLine
+                  done={analysisStep >= 1}
+                  pending="Processing your query"
+                  complete="Processing complete"
+                />
                 {attachments.length === 0 && analysisStep >= 1 && (
                   <div className="pf-intro__source-nudge">
                     <span>No source attached yet. Add a reference now, or continue without one.</span>
@@ -183,10 +193,11 @@ export function IntroOverlay({
                   </div>
                 )}
                 {analysisStep >= 1 && (
-                  <div className="pf-intro__analysis-line">
-                    <span className="pf-intro__spinner" aria-hidden />
-                    <span>Clustering core themes</span>
-                  </div>
+                  <AnalysisStatusLine
+                    done={analysisStep >= 2}
+                    pending="Clustering core themes"
+                    complete="Clustering complete"
+                  />
                 )}
                 {analysisStep >= 2 && (
                   <div className="pf-intro__cluster-choice">
