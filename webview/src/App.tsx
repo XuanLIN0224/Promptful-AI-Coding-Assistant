@@ -2041,7 +2041,9 @@ export default function App() {
                   />
                   <PlanCanvas
                     mode={planMode}
-                    workspaceFilePaths={programCatalog.map((f) => f.path)}
+                    workspaceFilePaths={
+                      planApplied ? programCatalog.map((f) => f.path) : []
+                    }
                     planExplorerTabId={planExplorerTabId}
                     planClusterFocus={clusterFocus}
                     enabledClusterIds={visibleClusterIds}

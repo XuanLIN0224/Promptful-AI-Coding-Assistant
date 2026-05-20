@@ -4,6 +4,7 @@ import {
   type SetStateAction,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -29,6 +30,7 @@ import {
 import { ClusterCanvasActionsContext, type ClusterCanvasActions } from "../flow/clusterCanvasContext";
 import { FileGraphCenterEdge } from "../flow/fileGraphEdge";
 import { planNodeTypes } from "../flow/nodeTypes";
+import { buildClusterFileGraphEdges } from "../fileGraphClusters";
 import { computeFileGraphLayout } from "../forceLayout";
 import { buildAdjacency } from "../graphAdjacency";
 import {
@@ -318,7 +320,34 @@ function fileBaseName(path: string): string {
   return last && last.length > 0 ? last : path;
 }
 
-/** File graph reflects workspace files only (empty until Apply plan writes sources). */
+function snapshotPlanNodes(nodes: Node[]): Node[] {
+  return nodes.map((n) => ({ ...n }));
+}
+
+function undirectedEdgeKey(a: string, b: string): string {
+  return a < b ? `${a}--${b}` : `${b}--${a}`;
+}
+
+/** Mock dependency edges plus cluster-slice links, limited to the visible file set. */
+function mergeFileGraphEdges(baseNodes: readonly Node<FileGraphPayload>[]): Edge[] {
+  const nodeIds = new Set(baseNodes.map((n) => n.id));
+  const seen = new Set<string>();
+  const edges: Edge[] = [];
+  const add = (edge: Edge) => {
+    const source = String(edge.source);
+    const target = String(edge.target);
+    if (!nodeIds.has(source) || !nodeIds.has(target)) return;
+    const key = undirectedEdgeKey(source, target);
+    if (seen.has(key)) return;
+    seen.add(key);
+    edges.push({ ...edge, source, target });
+  };
+  for (const edge of fileGraphEdges) add(edge);
+  for (const edge of buildClusterFileGraphEdges(baseNodes)) add(edge);
+  return edges;
+}
+
+/** File graph reflects workspace files only (empty until Apply plan). */
 function fileGraphPack(workspaceFilePaths: readonly string[]): { nodes: Node[]; edges: Edge[] } {
   if (workspaceFilePaths.length === 0) {
     return { nodes: [], edges: [] };
@@ -327,8 +356,7 @@ function fileGraphPack(workspaceFilePaths: readonly string[]): { nodes: Node[]; 
   const baseNodes = (fileGraphNodes as Node<FileGraphPayload>[]).filter((n) =>
     presentNames.has(n.data.path.toLowerCase())
   );
-  const nodeIds = new Set(baseNodes.map((n) => n.id));
-  const graphEdges = fileGraphEdges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
+  const graphEdges = mergeFileGraphEdges(baseNodes);
   const positions = computeFileGraphLayout(baseNodes, graphEdges);
   return {
     edges: graphEdges,
@@ -442,8 +470,113 @@ function Inner({
   const [graphDragging, setGraphDragging] = useState(false);
   const dragLastPosRef = useRef<{ id: string; x: number; y: number } | null>(null);
   const flowInstanceRef = useRef<ReactFlowInstance | null>(null);
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  const savedViewportRef = useRef(savedViewport);
+  savedViewportRef.current = savedViewport;
+  const overviewSnapshotRef = useRef<Node[] | null>(null);
+  const nodegraphSnapshotRef = useRef<Node[] | null>(null);
+  const prevModeRef = useRef<PlanCanvasMode | null>(null);
+  const allowViewportPublishRef = useRef(!savedViewport);
   const treeLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewportSaveRaf = useRef<number | null>(null);
+
+  const publishViewport = useCallback(
+    (vp: Viewport) => {
+      if (!allowViewportPublishRef.current) return;
+      if (viewportSaveRaf.current != null) cancelAnimationFrame(viewportSaveRaf.current);
+      viewportSaveRaf.current = requestAnimationFrame(() => {
+        viewportSaveRaf.current = null;
+        onViewportSave(vp, mode);
+      });
+    },
+    [onViewportSave, mode]
+  );
+
+  const fitViewOptions = useMemo(
+    () => ({
+      padding: isGraph ? 0.32 : isOverview ? 0.14 : 0.2,
+      duration: isGraph ? 420 : 360,
+    }),
+    [isGraph, isOverview]
+  );
+
+  useLayoutEffect(() => {
+    const inst = flowInstanceRef.current;
+
+    if (prevModeRef.current === null) {
+      prevModeRef.current = mode;
+      return;
+    }
+
+    const modeChanged = prevModeRef.current !== mode;
+    if (!modeChanged) return;
+
+    allowViewportPublishRef.current = false;
+    const outgoing = prevModeRef.current;
+    if (inst) {
+      onViewportSave(inst.getViewport(), outgoing);
+    }
+    if (outgoing === "overview") {
+      overviewSnapshotRef.current = snapshotPlanNodes(nodesRef.current);
+    } else if (outgoing === "nodegraph") {
+      nodegraphSnapshotRef.current = snapshotPlanNodes(nodesRef.current);
+    }
+
+    if (mode === "overview") {
+      const snap = overviewSnapshotRef.current;
+      const base = snap ?? overviewPack.nodes;
+      setNodes(layoutClusterFramesForOverview(base));
+      setEdges(overviewPack.edges);
+    } else {
+      const snap = nodegraphSnapshotRef.current;
+      setNodes(snap ?? graphPack.nodes);
+      setEdges(graphPack.edges);
+    }
+
+    prevModeRef.current = mode;
+
+    const releasePublish = () => {
+      requestAnimationFrame(() => {
+        allowViewportPublishRef.current = true;
+      });
+    };
+
+    if (inst) {
+      const vp = savedViewportRef.current;
+      const nextMode = mode;
+      requestAnimationFrame(() => {
+        const i = flowInstanceRef.current;
+        if (!i) {
+          releasePublish();
+          return;
+        }
+        if (vp) {
+          i.setViewport(vp, { duration: 0 });
+          requestAnimationFrame(() => {
+            i.setViewport(vp, { duration: 0 });
+            releasePublish();
+          });
+        } else if (nextMode === "overview") {
+          const kind = planClusterFocus as PlanTreeKind;
+          const measured = nodesArgForClusterFit(kind, i.getNodes());
+          const fallback = { id: `cluster-overview-${kind}` };
+          void i
+            .fitView({
+              padding: 0.22,
+              duration: 0,
+              maxZoom: 1.35,
+              nodes: measured.length > 0 ? measured : [fallback],
+            })
+            .finally(releasePublish);
+        } else {
+          void i.fitView({ padding: 0.32, duration: 420 }).finally(releasePublish);
+        }
+      });
+    } else {
+      releasePublish();
+    }
+  }, [mode, planClusterFocus, overviewPack, graphPack, setNodes, setEdges, onViewportSave]);
 
   const fitCurrentView = useCallback(
     (duration = 360) => {
@@ -477,19 +610,36 @@ function Inner({
   );
 
   useEffect(() => {
-    if (isOverview) {
-      setNodes(layoutClusterFramesForOverview(overviewPack.nodes));
-      setEdges(overviewPack.edges);
-      setCollapsedTreeNodeIds(initiallyCollapsedParentIds(allTreeParents));
-      setTreeParentChoiceByKind({});
-      setTreeHoverId(null);
-    } else {
-      setNodes(graphPack.nodes);
-      setEdges(graphPack.edges);
-      setFocusId(null);
+    if (!isOverview) return;
+    setNodes(layoutClusterFramesForOverview(overviewPack.nodes));
+    setEdges(overviewPack.edges);
+    setCollapsedTreeNodeIds(initiallyCollapsedParentIds(allTreeParents));
+  }, [isOverview, overviewPack, allTreeParents, setNodes, setEdges]);
+
+  useEffect(() => {
+    if (isOverview) return;
+    setNodes((prev) => {
+      const snap = nodegraphSnapshotRef.current;
+      const posById = new Map<string, { x: number; y: number }>();
+      for (const n of snap ?? prev) posById.set(n.id, n.position);
+      return graphPack.nodes.map((n) => ({
+        ...n,
+        position: posById.get(n.id) ?? n.position,
+      }));
+    });
+    setEdges(graphPack.edges);
+  }, [isOverview, graphPack, setNodes, setEdges]);
+
+  useEffect(() => {
+    if (graphPack.nodes.length === 0) {
+      nodegraphSnapshotRef.current = null;
     }
-    requestAnimationFrame(() => requestAnimationFrame(() => fitCurrentView(0)));
-  }, [isOverview, overviewPack, graphPack, allTreeParents, setNodes, setEdges, fitCurrentView]);
+  }, [graphPack.nodes.length]);
+
+  useEffect(() => {
+    setFocusId(null);
+    setTreeHoverId(null);
+  }, [mode, planExplorerTabId]);
 
   useEffect(() => {
     if (!isOverview) return;
@@ -504,6 +654,49 @@ function Inner({
       onFlowReady?.(null);
     },
     [onFlowReady]
+  );
+
+  const handleFlowInit = useCallback(
+    (instance: ReactFlowInstance) => {
+      flowInstanceRef.current = instance;
+      onFlowReady?.(instance);
+      const vp0 = savedViewportRef.current;
+      if (vp0) {
+        allowViewportPublishRef.current = false;
+        requestAnimationFrame(() => {
+          instance.setViewport(vp0, { duration: 0 });
+          requestAnimationFrame(() => {
+            instance.setViewport(vp0, { duration: 0 });
+            allowViewportPublishRef.current = true;
+          });
+        });
+        return;
+      }
+      allowViewportPublishRef.current = true;
+      if (isOverview) {
+        const kind = planClusterFocus as PlanTreeKind;
+        const fit = () => {
+          const measured = nodesArgForClusterFit(kind, instance.getNodes());
+          const fallback = { id: `cluster-overview-${kind}` };
+          void instance.fitView({
+            padding: 0.22,
+            maxZoom: 1.35,
+            duration: 0,
+            nodes: measured.length > 0 ? measured : [fallback],
+          });
+        };
+        requestAnimationFrame(() => requestAnimationFrame(fit));
+        return;
+      }
+      if (!nodegraphSnapshotRef.current) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            void instance.fitView(fitViewOptions);
+          });
+        });
+      }
+    },
+    [fitViewOptions, isOverview, planClusterFocus, onFlowReady]
   );
 
   const incomingParents = useMemo(() => buildIncomingParentsMap(edges), [edges]);
@@ -986,19 +1179,16 @@ function Inner({
         edgeTypes={planEdgeTypes}
         style={{ width: "100%", height: "100%" }}
         fitView={false}
+        fitViewOptions={fitViewOptions}
         defaultViewport={savedViewport ?? undefined}
         onSelectionChange={onSelection}
-        onInit={(instance) => {
-          flowInstanceRef.current = instance;
-          onFlowReady?.(instance);
-          requestAnimationFrame(() => requestAnimationFrame(() => fitCurrentView(0)));
-        }}
+        onViewportChange={publishViewport}
+        onInit={handleFlowInit}
         onMoveEnd={(_, viewport) => {
+          if (!allowViewportPublishRef.current) return;
           if (viewportSaveRaf.current != null) cancelAnimationFrame(viewportSaveRaf.current);
-          viewportSaveRaf.current = requestAnimationFrame(() => {
-            viewportSaveRaf.current = null;
-            onViewportSave(viewport, mode);
-          });
+          viewportSaveRaf.current = null;
+          onViewportSave(viewport, mode);
         }}
         minZoom={0.08}
         maxZoom={2}
@@ -1040,6 +1230,7 @@ function Inner({
           if (!isGraph) return;
           setGraphDragging(false);
           dragLastPosRef.current = null;
+          nodegraphSnapshotRef.current = snapshotPlanNodes(nodesRef.current);
         }}
         onNodeDrag={(evt: MouseEvent, node: Node) => propagateNeighborDrag(evt, node)}
         onNodeClick={(_, node) => handleTreeClick(node)}
