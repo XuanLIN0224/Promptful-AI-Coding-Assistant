@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import type { OnSelectionChangeParams, Viewport } from "@xyflow/react";
-import type { ClusterId, DecisionNodePayload, DynamicDecisionNode, FeatureItem, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode, WorkspaceTab } from "./types";
+import type { ClusterId, DecisionNodePayload, DecisionSource, DynamicDecisionNode, FeatureItem, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode, WorkspaceTab } from "./types";
 import { CLUSTERS } from "./types";
 import { FeatureSidebar } from "./components/FeatureSidebar";
 import { IntroOverlay } from "./components/IntroOverlay";
@@ -13,6 +13,7 @@ import { assistantLineForProgramTab } from "./assistantLine";
 import { mimicAi } from "./mimicAi";
 import type { DecisionOutlineItem, PlanTreeKind } from "./mock/flows";
 import { decisionOutlineForCluster } from "./mock/flows";
+import { nodeLevelLabel } from "./utils/nodeLevelLabel";
 import { canonicalProgramTabId, clusterForProgramEditorTab, PROGRAM_EDITOR_TABS } from "./programTabs";
 import "./app.css";
 
@@ -282,6 +283,7 @@ export default function App() {
   const [generatedClusterTreeReady, setGeneratedClusterTreeReady] = useState<Set<ClusterId>>(() => new Set());
   const [deletedClusterIds, setDeletedClusterIds] = useState<Set<ClusterId>>(() => new Set());
   const [dynamicDecisionNodes, setDynamicDecisionNodes] = useState<Partial<Record<ClusterId, DynamicDecisionNode[]>>>({});
+  const [deletedNodeIds, setDeletedNodeIds] = useState<Set<string>>(() => new Set());
   const [clusterLabelOverrides, setClusterLabelOverrides] = useState<Partial<Record<ClusterId, string>>>({});
   const [clusterRenameDraft, setClusterRenameDraft] = useState<null | { id: ClusterId; label: string }>(null);
   const [clusterDeleteDraft, setClusterDeleteDraft] = useState<null | { id: ClusterId; label: string }>(null);
@@ -367,10 +369,11 @@ export default function App() {
             : decisionOutlineForCluster(kind).map((item, index) =>
                 index === 0 && clusterLabelOverrides[kind] ? { ...item, title: clusterLabel(kind) } : item
               );
-          return [kind, [...moved, ...base, ...(dynamicDecisionNodes[kind] ?? [])]];
+          const outline = [...moved, ...base, ...(dynamicDecisionNodes[kind] ?? [])];
+          return [kind, outline.filter((item) => !deletedNodeIds.has(item.nodeId))];
         })
       ) as Partial<Record<ClusterId, DecisionOutlineItem[]>>,
-    [clusterLabel, clusterLabelOverrides, dynamicDecisionNodes, movedRootNodes, rootOnlyClusterIds, visibleClusterIds]
+    [clusterLabel, clusterLabelOverrides, dynamicDecisionNodes, deletedNodeIds, movedRootNodes, rootOnlyClusterIds, visibleClusterIds]
   );
 
   const completedClusterCount = visibleClusterIds.filter((kind) => completedClusterIds.has(kind)).length;
@@ -766,6 +769,107 @@ export default function App() {
     });
   }, []);
 
+  const deleteTreeNodes = useCallback((nodeIds: string[], kind: PlanTreeKind, label: string) => {
+    if (nodeIds.length === 0) return;
+    const idSet = new Set(nodeIds);
+    setDeletedNodeIds((prev) => {
+      const next = new Set(prev);
+      nodeIds.forEach((id) => next.add(id));
+      return next;
+    });
+    setDynamicDecisionNodes((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const cluster of Object.keys(next) as ClusterId[]) {
+        const items = next[cluster];
+        if (!items) continue;
+        const filtered = items.filter((item) => !idSet.has(item.nodeId));
+        if (filtered.length !== items.length) {
+          next[cluster] = filtered;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setMovedRootNodes((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const cluster of Object.keys(next) as ClusterId[]) {
+        const items = next[cluster];
+        if (!items) continue;
+        const filtered = items.filter((item) => !idSet.has(item.nodeId));
+        if (filtered.length !== items.length) {
+          next[cluster] = filtered;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    const idsToRemove = new Set(nodeIds.flatMap(featureIdsForNode));
+    setGeneratedFeatureNodeIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const nodeId of idSet) {
+        if (next.delete(nodeId)) changed = true;
+      }
+      return changed ? next : prev;
+    });
+    setGlobalFeatures((prev) => prev.filter((item) => !idsToRemove.has(item.id)));
+    setLocalByCluster((prev) => ({
+      ...prev,
+      [kind]: prev[kind].filter((item) => !idsToRemove.has(item.id)),
+    }));
+    setActiveContext((prev) => {
+      if (!prev) return prev;
+      if (prev.kind === "node" && idSet.has(prev.id)) return null;
+      if (idsToRemove.has(prev.id)) return null;
+      return prev;
+    });
+    setConfirmedNodeIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const nodeId of idSet) {
+        if (next.delete(nodeId)) changed = true;
+      }
+      return changed ? next : prev;
+    });
+    setPlanTreeSelections((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [treeKind, leaf] of Object.entries(next) as [PlanTreeKind, string | null | undefined][]) {
+        if (leaf && idSet.has(leaf)) {
+          next[treeKind] = null;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setNodeChatHistoryById((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const nodeId of idSet) {
+        if (nodeId in next) {
+          delete next[nodeId];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setSourceAssignments((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [sourceId, assigned] of Object.entries(prev)) {
+        const filtered = assigned.filter((nodeId) => !idSet.has(nodeId));
+        if (filtered.length !== assigned.length) {
+          next[sourceId] = filtered;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setAssistantLine(`Deleted "${label}" from the decision tree.`);
+  }, []);
+
   const handleTreeNodesCollapsed = useCallback((nodeIds: string[], kind: PlanTreeKind) => {
     if (nodeIds.length === 0) return;
     const nodeIdSet = new Set(nodeIds);
@@ -956,6 +1060,21 @@ export default function App() {
     () => attachments.map((a) => ({ id: a.id, kind: a.kind, label: a.label })),
     [attachments]
   );
+
+  const sourcesByNodeId = useMemo(() => {
+    const byNode: Record<string, DecisionSource[]> = {};
+    for (const [sourceId, nodeIds] of Object.entries(sourceAssignments)) {
+      const item = sourceItems.find((source) => source.id === sourceId);
+      if (!item) continue;
+      const mapped: DecisionSource = { id: item.id, label: item.label, kind: item.kind };
+      for (const nodeId of nodeIds) {
+        const list = byNode[nodeId] ?? [];
+        if (!list.some((entry) => entry.id === mapped.id)) list.push(mapped);
+        byNode[nodeId] = list;
+      }
+    }
+    return byNode;
+  }, [sourceAssignments, sourceItems]);
 
   useEffect(() => {
     setOpenSourceCards((prev) => {
@@ -1949,6 +2068,9 @@ export default function App() {
                     onTreeUndoNode={handleTreeUndoNode}
                     onTreeNodesCollapsed={handleTreeNodesCollapsed}
                     onOpenClusterMenu={openClusterCanvasMenu}
+                    deletedNodeIds={deletedNodeIds}
+                    onDeleteTreeNodes={deleteTreeNodes}
+                    sourcesByNodeId={sourcesByNodeId}
                   />
                 </div>
               </>
@@ -2044,7 +2166,7 @@ export default function App() {
                                                 onChange={() => toggleSourceAssignment(source.id, node.nodeId)}
                                               />
                                               <span title={node.title}>{node.title}</span>
-                                              <em>{node.depth === 0 ? "root" : "node"}</em>
+                                              <em>{nodeLevelLabel(node.depth)}</em>
                                             </label>
                                           ))
                                         )}

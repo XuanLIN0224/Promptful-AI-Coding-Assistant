@@ -21,6 +21,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import type { ClusterId, FeatureItem } from "../types";
 import { CLUSTERS } from "../types";
 import type { DecisionOutlineItem } from "../mock/flows";
+import { nodeLevelLabel } from "../utils/nodeLevelLabel";
 
 type ChatMode = "general" | "node" | "move" | "create";
 type ChatHistoryItem = {
@@ -29,11 +30,6 @@ type ChatHistoryItem = {
   role: "user" | "assistant";
   text: string;
 };
-
-function layerNodeLevelLabel(depth: number): string {
-  if (depth <= 0) return "root";
-  return `lv.${depth}`;
-}
 
 function rgbaFromHex(hex: string, alpha: number): string {
   const raw = hex.replace("#", "");
@@ -902,7 +898,7 @@ export function FeatureSidebar({
                                 onClick={() => onNavigateDecisionNode?.(cl.id, item)}
                               >
                                 <span className="pf-layer-node__name">{item.title}</span>
-                                <span className="pf-layer-node__meta">{layerNodeLevelLabel(item.depth)}</span>
+                                <span className="pf-layer-node__meta">{nodeLevelLabel(item.depth)}</span>
                               </button>
                             </div>
                           ))

@@ -57,7 +57,7 @@ export interface FeatureItem {
 export interface DecisionSource {
   id: string;
   label: string;
-  kind: "prompt" | "file" | "assumption" | "feature";
+  kind: "prompt" | "file" | "assumption" | "feature" | "link" | "document" | "video" | "image";
 }
 
 export interface DecisionOption {
@@ -110,6 +110,8 @@ export interface DecisionNodePayload {
   onEditNode?: (nodeId: string) => void;
   /** Mock move affordance for moving the node/subtree into another cluster */
   onMoveNode?: (nodeId: string, clusterId: ClusterId) => void;
+  /** Remove this node and its descendants from the decision tree */
+  onDeleteNode?: (nodeId: string, clusterId: ClusterId) => void;
   /** Confirmation checkbox for selected route/manual inclusion in code generation */
   onToggleConfirm?: (nodeId: string) => void;
   nodeConfirmed?: boolean;

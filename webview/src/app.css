@@ -3955,6 +3955,14 @@
   background: rgba(0, 0, 0, 0.055);
 }
 
+.pf-tree-menu__danger {
+  color: #9a3412;
+}
+
+.pf-tree-menu__danger:hover {
+  background: rgba(217, 63, 50, 0.1);
+}
+
 .pf-node__pill {
   display: inline-flex;
   align-items: center;
@@ -4338,4 +4346,24 @@
 .pf-src__kind--feature {
   background: rgba(52, 199, 89, 0.14);
   color: #1f7a38;
+}
+
+.pf-src__kind--link {
+  background: rgba(0, 113, 227, 0.12);
+  color: #0a64c9;
+}
+
+.pf-src__kind--document {
+  background: rgba(88, 86, 214, 0.12);
+  color: #3b39a4;
+}
+
+.pf-src__kind--video {
+  background: rgba(175, 82, 222, 0.14);
+  color: #7a3d9c;
+}
+
+.pf-src__kind--image {
+  background: rgba(255, 149, 0, 0.14);
+  color: #a65a00;
 }

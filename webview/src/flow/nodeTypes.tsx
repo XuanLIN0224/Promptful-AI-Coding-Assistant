@@ -70,15 +70,17 @@ function TreeNodeMenuButton({
   onGenerate,
   onEdit,
   onMove,
+  onDelete,
 }: {
   generated?: boolean;
   onGenerate?: (target: "global" | "local") => void;
   onEdit?: () => void;
   onMove?: () => void;
+  onDelete?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const hasMenu = !!(onGenerate || onEdit || onMove);
+  const hasMenu = !!(onGenerate || onEdit || onMove || onDelete);
 
   useEffect(() => {
     if (!open) return;
@@ -135,6 +137,11 @@ function TreeNodeMenuButton({
           {onMove ? (
             <button type="button" role="menuitem" onClick={run(onMove)}>
               Move node
+            </button>
+          ) : null}
+          {onDelete ? (
+            <button type="button" role="menuitem" className="pf-tree-menu__danger" onClick={run(onDelete)}>
+              Delete
             </button>
           ) : null}
         </div>
@@ -217,6 +224,7 @@ export function DecisionNode({ id, data, selected }: NodeProps<DecisionNodePaylo
             onGenerate={data.onGenerateFeatures ? (target) => data.onGenerateFeatures?.(id, target) : undefined}
             onEdit={data.onEditNode ? () => data.onEditNode?.(id) : undefined}
             onMove={data.onMoveNode ? () => data.onMoveNode?.(id, data.clusterId) : undefined}
+            onDelete={data.onDeleteNode ? () => data.onDeleteNode?.(id, data.clusterId) : undefined}
           />
           {data.treeCanToggleChildren ? (
             <TreeExpandButton expanded={data.treeChildrenExpanded !== false} onToggle={() => data.onTreeToggleChildren?.(id)} />
@@ -279,6 +287,7 @@ export function BranchNode({ id, data, selected }: NodeProps<DecisionNodePayload
             onGenerate={data.onGenerateFeatures ? (target) => data.onGenerateFeatures?.(id, target) : undefined}
             onEdit={data.onEditNode ? () => data.onEditNode?.(id) : undefined}
             onMove={data.onMoveNode ? () => data.onMoveNode?.(id, data.clusterId) : undefined}
+            onDelete={data.onDeleteNode ? () => data.onDeleteNode?.(id, data.clusterId) : undefined}
           />
           {data.treeCanToggleChildren ? (
             <TreeExpandButton expanded={data.treeChildrenExpanded !== false} onToggle={() => data.onTreeToggleChildren?.(id)} />

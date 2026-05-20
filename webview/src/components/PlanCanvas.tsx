@@ -49,7 +49,7 @@ import {
   pathNodeIdsFromRootResolved,
   resolvedParentForNode,
 } from "../treePath";
-import type { ClusterFrameData, ClusterId, DecisionNodePayload, DynamicDecisionNode, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode } from "../types";
+import type { ClusterFrameData, ClusterId, DecisionNodePayload, DecisionSource, DynamicDecisionNode, FileGraphPayload, GeneratedFeatureRequest, PlanCanvasMode } from "../types";
 import { CLUSTERS } from "../types";
 
 const planEdgeTypes = { fileGraphCenter: FileGraphCenterEdge };
@@ -197,6 +197,28 @@ function applyRootOnlyClusters(
     return !(sourceKind && rootOnly.has(sourceKind)) && !(targetKind && rootOnly.has(targetKind));
   });
   return { nodes: layoutClusterFramesForOverview(nodes), edges };
+}
+
+function mergeNodeSources(base: DecisionSource[] | undefined, assigned: DecisionSource[] | undefined): DecisionSource[] {
+  const assignedList = assigned ?? [];
+  const baseList = base ?? [];
+  if (assignedList.length === 0) return baseList;
+  const seen = new Set(assignedList.map((source) => source.id));
+  return [...assignedList, ...baseList.filter((source) => !seen.has(source.id))];
+}
+
+function collectDescendantNodeIds(nodeId: string, edges: Edge[]): Set<string> {
+  const result = new Set<string>([nodeId]);
+  const queue = [nodeId];
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    for (const edge of edges) {
+      if (edge.source !== current || result.has(edge.target)) continue;
+      result.add(edge.target);
+      queue.push(edge.target);
+    }
+  }
+  return result;
 }
 
 function appendMovedRootNodes(base: { nodes: Node[]; edges: Edge[] }, movedRootNodes: Partial<Record<ClusterId, DecisionOutlineItem[]>>): { nodes: Node[]; edges: Edge[] } {
@@ -350,6 +372,9 @@ function Inner({
   onTreeUndoNode,
   onTreeNodesCollapsed,
   onOpenClusterMenu,
+  deletedNodeIds,
+  onDeleteTreeNodes,
+  sourcesByNodeId,
 }: {
   mode: PlanCanvasMode;
   onOpenClusterMenu?: ClusterCanvasActions["openClusterMenu"];
@@ -380,6 +405,9 @@ function Inner({
   onClusterComplete: (kind: PlanTreeKind) => void;
   onTreeUndoNode: (nodeId: string, kind: PlanTreeKind) => void;
   onTreeNodesCollapsed: (nodeIds: string[], kind: PlanTreeKind) => void;
+  deletedNodeIds: ReadonlySet<string>;
+  onDeleteTreeNodes: (nodeIds: string[], kind: PlanTreeKind, label: string) => void;
+  sourcesByNodeId: Record<string, DecisionSource[]>;
 }) {
   const isOverview = mode === "overview";
   const isGraph = mode === "nodegraph";
@@ -409,6 +437,7 @@ function Inner({
   );
   const [nodeTextEdits, setNodeTextEdits] = useState<Record<string, { title: string; summary: string }>>({});
   const [editDraft, setEditDraft] = useState<null | { nodeId: string; title: string; summary: string }>(null);
+  const [deleteDraft, setDeleteDraft] = useState<null | { nodeId: string; kind: PlanTreeKind; label: string }>(null);
   const [treeParentChoiceByKind, setTreeParentChoiceByKind] = useState<Partial<Record<PlanTreeKind, Record<string, string>>>>({});
   const [graphDragging, setGraphDragging] = useState(false);
   const dragLastPosRef = useRef<{ id: string; x: number; y: number } | null>(null);
@@ -545,6 +574,27 @@ function Inner({
     setEditDraft(null);
   }, [editDraft]);
 
+  const handleTreeDeleteNode = useCallback(
+    (nodeId: string, clusterId: ClusterId) => {
+      if (PLAN_CLUSTER_TREE_ROOT_IDS.has(nodeId)) return;
+      const node = nodes.find((candidate) => candidate.id === nodeId);
+      if (!node || (node.type !== "decision" && node.type !== "branch")) return;
+      const data = node.data as DecisionNodePayload;
+      const current = nodeTextEdits[nodeId] ?? { title: data.title, summary: data.summary };
+      const kind = kindFromNodeId(nodeId) ?? (clusterId as PlanTreeKind);
+      setDeleteDraft({ nodeId, kind, label: current.title.trim() || "Untitled decision" });
+    },
+    [nodeTextEdits, nodes]
+  );
+
+  const applyDeleteDraft = useCallback(() => {
+    if (!deleteDraft) return;
+    const ids = collectDescendantNodeIds(deleteDraft.nodeId, edges);
+    onDeleteTreeNodes([...ids], deleteDraft.kind, deleteDraft.label);
+    setDeleteDraft(null);
+    setTreeHoverId(null);
+  }, [deleteDraft, edges, onDeleteTreeNodes]);
+
   const handleTreeUndo = useCallback(
     (fromNodeId: string) => {
       setTreeHoverId(null);
@@ -615,8 +665,11 @@ function Inner({
       const kind = nodeKind(n);
       const hiddenByEnabledCluster = kind ? !enabledClusterSet.has(kind) : false;
       const hiddenByCluster = !showAllClusters && kind !== visibleKind;
-      const hidden = hiddenByEnabledCluster || hiddenByCluster || hiddenByCollapse.has(n.id);
+      const hiddenByDeleted = deletedNodeIds.has(n.id);
+      const hidden = hiddenByDeleted || hiddenByEnabledCluster || hiddenByCluster || hiddenByCollapse.has(n.id);
       if (hidden) hiddenIds.add(n.id);
+      const canDeleteNode =
+        (n.type === "decision" || n.type === "branch") && !PLAN_CLUSTER_TREE_ROOT_IDS.has(n.id) && !hiddenByDeleted;
 
       if (n.type === "clusterFrame") {
         const d = n.data as ClusterFrameData;
@@ -638,11 +691,7 @@ function Inner({
       if (!treeKind) {
         const fallbackKind = (n.data as Partial<DecisionNodePayload>).clusterId;
         if (!fallbackKind) return { ...n, hidden };
-        const d = n.data as {
-          title: string;
-          summary: string;
-          clusterId: GeneratedFeatureRequest["clusterId"];
-        };
+        const d = n.data as DecisionNodePayload;
         return {
           ...n,
           hidden,
@@ -650,6 +699,7 @@ function Inner({
           data: {
             ...(n.data as object),
             ...(nodeTextEdits[n.id] ?? {}),
+            sources: mergeNodeSources(d.sources, sourcesByNodeId[n.id]),
             treeCommitted: false,
             treeHoverPath: false,
             treePathHover: treeHoverId === n.id,
@@ -662,6 +712,7 @@ function Inner({
             onToggleConfirm: onToggleConfirmNode,
             onMoveNode: onRequestMoveNode,
             onEditNode: handleTreeEditNode,
+            onDeleteNode: canDeleteNode ? handleTreeDeleteNode : undefined,
             onGenerateFeatures: (_nodeId: string, target: "global" | "local") =>
               onGenerateFeatures({
                 nodeId: n.id,
@@ -685,11 +736,7 @@ function Inner({
           ? new Set(pathNodeIdsFromRootResolved(treeHoverId, incomingParents, hoverOverride))
           : null;
       const childCount = (childrenMap.get(n.id) ?? []).length;
-      const d = n.data as {
-        title: string;
-        summary: string;
-        clusterId: GeneratedFeatureRequest["clusterId"];
-      };
+      const d = n.data as DecisionNodePayload;
       const rootTitleOverride = PLAN_CLUSTER_TREE_ROOT_IDS.has(n.id) ? clusterLabels[treeKind] : undefined;
       return {
         ...n,
@@ -699,6 +746,7 @@ function Inner({
           ...(n.data as object),
           ...(rootTitleOverride ? { title: rootTitleOverride } : {}),
           ...(nodeTextEdits[n.id] ?? {}),
+          sources: mergeNodeSources(d.sources, sourcesByNodeId[n.id]),
           treeCommitted: committed,
           treeHoverPath: !committed && (hoverSet?.has(n.id) ?? false),
           treePathHover: treeHoverId === n.id,
@@ -713,6 +761,7 @@ function Inner({
           onToggleConfirm: onToggleConfirmNode,
           onMoveNode: onRequestMoveNode,
           onEditNode: handleTreeEditNode,
+          onDeleteNode: canDeleteNode ? handleTreeDeleteNode : undefined,
           onGenerateFeatures: (_nodeId: string, target: "global" | "local") =>
             onGenerateFeatures({
               nodeId: n.id,
@@ -782,6 +831,9 @@ function Inner({
     handleTreeUndo,
     handleTreeToggleChildren,
     handleTreeEditNode,
+    handleTreeDeleteNode,
+    deletedNodeIds,
+    sourcesByNodeId,
     generatedFeatureNodeIds,
     chatPromptCounts,
     confirmedNodeIds,
@@ -1068,6 +1120,28 @@ function Inner({
           </div>
         </div>
       )}
+      {deleteDraft && (
+        <div className="pf-tree-edit-modal-backdrop" role="presentation" onMouseDown={() => setDeleteDraft(null)}>
+          <div
+            className="pf-tree-edit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pf-tree-delete-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div id="pf-tree-delete-title" className="pf-tree-edit-modal__title">Delete decision node?</div>
+            <p className="pf-tree-edit-modal__body">
+              Delete <strong>{deleteDraft.label}</strong> and its child decisions from the tree? This cannot be undone.
+            </p>
+            <div className="pf-tree-edit-modal__actions">
+              <button type="button" className="pf-tree-edit-modal__ghost" onClick={() => setDeleteDraft(null)}>Cancel</button>
+              <button type="button" className="pf-tree-edit-modal__confirm pf-tree-edit-modal__confirm--danger" onClick={applyDeleteDraft}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   </ClusterCanvasActionsContext.Provider>
   );
@@ -1103,6 +1177,9 @@ export function PlanCanvas({
   onTreeUndoNode,
   onTreeNodesCollapsed,
   onOpenClusterMenu,
+  deletedNodeIds,
+  onDeleteTreeNodes,
+  sourcesByNodeId,
 }: {
   mode: PlanCanvasMode;
   onOpenClusterMenu?: ClusterCanvasActions["openClusterMenu"];
@@ -1133,6 +1210,9 @@ export function PlanCanvas({
   onClusterComplete: (kind: PlanTreeKind) => void;
   onTreeUndoNode: (nodeId: string, kind: PlanTreeKind) => void;
   onTreeNodesCollapsed: (nodeIds: string[], kind: PlanTreeKind) => void;
+  deletedNodeIds: ReadonlySet<string>;
+  onDeleteTreeNodes: (nodeIds: string[], kind: PlanTreeKind, label: string) => void;
+  sourcesByNodeId: Record<string, DecisionSource[]>;
 }) {
   const stableOnSelection = useCallback((p: OnSelectionChangeParams) => onSelection(p), [onSelection]);
   return (
@@ -1169,6 +1249,9 @@ export function PlanCanvas({
             onTreeUndoNode={onTreeUndoNode}
             onTreeNodesCollapsed={onTreeNodesCollapsed}
             onOpenClusterMenu={onOpenClusterMenu}
+            deletedNodeIds={deletedNodeIds}
+            onDeleteTreeNodes={onDeleteTreeNodes}
+            sourcesByNodeId={sourcesByNodeId}
           />
         </ReactFlowProvider>
       </div>
